@@ -1,73 +1,121 @@
+<p align="center">
+  <img src="./assets/wordmark.svg" alt="DeepSeek Harness Desktop" width="360" />
+</p>
+
 # DeepSeek Harness Desktop
 
-把 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）包装成桌面应用的 Electron 壳。
+[![Release](https://img.shields.io/github/v/release/HaoyueQin/deepseek-harness-desktop?style=flat-square&logo=github)](https://github.com/HaoyueQin/deepseek-harness-desktop/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/HaoyueQin/deepseek-harness-desktop/release.yml?style=flat-square&label=build)](https://github.com/HaoyueQin/deepseek-harness-desktop/actions)
+[![Stars](https://img.shields.io/github/stars/HaoyueQin/deepseek-harness-desktop?style=flat-square)](https://github.com/HaoyueQin/deepseek-harness-desktop/stargazers)
+[![License](https://img.shields.io/github/license/HaoyueQin/deepseek-harness-desktop?style=flat-square)](LICENSE)
+[![Issues](https://img.shields.io/github/issues/HaoyueQin/deepseek-harness-desktop?style=flat-square)](https://github.com/HaoyueQin/deepseek-harness-desktop/issues)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-4176e6?style=flat-square)]()
 
-壳与 dsh 本体是**纯运行时关系**：壳 spawn 一个内置 Node 进程跑 `dsh web`，在 BrowserWindow 里加载其 localhost 页面。零侵入，不 fork、不修改 dsh 源码。
+A desktop shell for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — the pluggable AI agent harness from DeepSeek. Wrap the official `dsh web` UI into a native-feeling, always-on desktop app.
 
-## 架构
+English | [简体中文](README.zh.md)
 
-```
-Electron 壳（本仓库）
-   │  spawn（内置 Node 24 LTS → resources/dsh 里的 dsh web --port 0）
-   ▼
-dsh Node 进程（@deepseek-ai/dsh，自带前端 dist，随包携带完整依赖树）
-   │  解析 stdout 行 "dsh web: http://127.0.0.1:<port>"（官方 readiness signal）
-   ▼
-BrowserWindow（frameless，融合窗口控制条，关闭隐藏到托盘）
-```
+## Features
 
-- **端口**：`--port 0` 让 OS 分配，从 dsh 的 stdout URL 行读实际端口——官方钦定的 supervisor 通道，无端口冲突
-- **数据隔离**：`DSH_HOME=<userData>/dsh`，不污染用户默认 `~/.dsh`
-- **托盘常驻**：关窗口隐藏到托盘，托盘退出才停止 dsh；托盘菜单含开机自启开关
-- **单实例**：`requestSingleInstanceLock`，第二实例唤起已有窗口
-- **安全**：dsh 仅监听 127.0.0.1；渲染进程 `contextIsolation + sandbox`，无 nodeIntegration
+- **Zero-intrusion wrapper** — spawns `dsh web` as a child process (bundled Node 24 + `@deepseek-ai/dsh`), loads its localhost UI; the harness source is never modified, upgrades are one version bump away
+- **Frameless immersive window** — no native title bar; the custom window controls (minimize / maximize / close) blend into the page with DeepSeek brand-blue hover and follow the light/dark theme
+- **Always-on tray** — closing the window hides to the system tray instead of quitting; the backend keeps running for instant resume
+- **Auto-start at login** — toggle in the tray menu (Windows/macOS native; Linux via XDG autostart)
+- **Port-conflict proof** — `--port 0` lets the OS pick a free port; the shell discovers the real address from dsh's stdout readiness line
+- **Data isolation** — `DSH_HOME` points to the app's own data directory; your default `~/.dsh` stays untouched
+- **Single instance** — launching again focuses the existing window
+- **Full plugin freedom** — dynamic plugins (`cordis_define`/`cordis_run`), `$DSH_HOME/cordis.patch.yml`, and the npm plugin ecosystem all work exactly as in the web edition
 
-## 开发
+## Install
+
+Download the installer for your platform from the [Releases](https://github.com/HaoyueQin/deepseek-harness-desktop/releases) page:
+
+| Platform | Package | Notes |
+| --- | --- | --- |
+| Windows | `DeepSeek Harness Desktop Setup <ver>.exe` | NSIS installer, x64 |
+| macOS | `.dmg` (Apple Silicon / Intel) | unsigned — first run: right-click → Open |
+| Linux | `.AppImage` + `.deb` | x64 |
+
+### First launch
+
+1. Start the app — the bundled `dsh web` server boots in the background and the UI opens at its ready state
+2. Dismiss the **预览版 / preview** notice
+3. Open **Settings → Models** and configure your LLM provider (API key, model, base URL) — same as the web edition
+4. Pick a workspace and start chatting
+
+### Everyday use
+
+- **Close window** → app hides to the tray, backend keeps running (a DeepSeek whale icon appears near the system clock)
+- **Tray menu** (right-click the icon): reopen the window, toggle auto-start at login, or quit — quitting fully stops the backend
+- **Quit via tray** is the only way to exit the app; closing the window never does
+
+## Development
 
 ```sh
-npm install          # 安装 electron 等（国内网络下 electron 二进制需镜像/代理，见下方）
-npm run dev          # dev 模式：系统 node + 项目 node_modules 里的 dsh
+npm install        # installs electron 43 + toolchain
+npm run dev        # dev mode: system Node + local node_modules dsh
 ```
 
-> **electron 二进制下载失败？**（`Downloading Electron binary...` 卡住）
-> 手动下载 `https://npmmirror.com/mirrors/electron/<版本>/electron-v<版本>-win32-x64.zip` 放入
-> `%LOCALAPPDATA%\electron\Cache\electron-v<版本>-win32-x64\`，然后：
+> **electron binary download stuck?** (you see `Downloading Electron binary...` forever)
+> GitHub-hosted binaries can be slow from some networks. Manually fetch
+> `https://npmmirror.com/mirrors/electron/<version>/electron-v<version>-win32-x64.zip` into
+> `%LOCALAPPDATA%\electron\Cache\electron-v<version>-win32-x64\`, then:
 > ```sh
 > printf "electron.exe" > node_modules/electron/path.txt
-> # 手动解压 zip 到 node_modules/electron/dist/
+> # and unzip the archive into node_modules/electron/dist/
 > ```
 
-## 打包
+## Packaging
 
 ```sh
-npm run build:runtime     # 生成 resources/（内置 Node 24 + dsh 依赖树 + 图标）
-                          # 网络不佳时：HTTPS_PROXY=http://127.0.0.1:8897 npm run build:runtime
-npm run dist:win          # Windows NSIS 安装包 → release/
-# npm run dist:mac        # macOS dmg（需要 macOS 环境，CI 走 macos runner）
+npm run build:runtime     # fills resources/: bundled Node 24 LTS + dsh dependency tree + icons
+                          # slow network? HTTPS_PROXY=http://127.0.0.1:8897 npm run build:runtime
+npm run dist:win          # Windows NSIS installer → release/
+# npm run dist:mac        # macOS dmg (requires macOS; CI builds it)
 # npm run dist:linux      # Linux AppImage + deb
 ```
 
-产物通过 GitHub Actions 三平台 matrix 自动发布（`.github/workflows/release.yml`）。
+The CI workflow (`.github/workflows/release.yml`) builds all three platforms on every `v*` tag and publishes the artifacts to a GitHub Release.
 
-## 目录
+## Data & logs
+
+- **Data** (`DSH_HOME`): `<userData>/dsh` — profiles, sessions, storage
+- **Logs**: `<userData>/logs/main.log`
+- **Runtime** (bundled): `<install>/resources/resources/` — Node (`runtime/node/`) + dsh (`dsh/node_modules/`)
+
+## Project layout
 
 ```
 src/
-  main.ts          主进程：单实例、窗口、托盘、dsh 生命周期编排
-  paths.ts         dev/prod 资源路径解析（resources/dsh、内置 node、preload）
-  dsh/spawn.ts     spawn dsh web --port 0，stdout URL 行解析，优雅停止
-  dsh/ready.ts     HTTP 就绪探测
-  tray.ts          托盘（打开/开机自启/退出）
-  autostart.ts     开机自启（win/mac 原生 + linux XDG autostart）
-  preload.ts       contextBridge 暴露窗口控制 IPC（编译为 CJS）
+  main.ts          app lifecycle: single-instance lock, window, tray, dsh orchestration
+  paths.ts         dev/prod resource resolution (bundled dsh, Node, preload)
+  dsh/spawn.ts     spawn dsh web --port 0; parse stdout URL line; graceful stop
+  dsh/ready.ts     HTTP readiness probe
+  tray.ts          tray menu (open / auto-start / quit)
+  autostart.ts     auto-start (native on win/mac; XDG file on linux)
+  preload.ts       contextBridge window-control IPC (compiled to CJS)
 scripts/
-  install-runtime.mjs  构建时填充 resources/（Node 发行版 + dsh 依赖树 + 图标）
-  smoke.mjs            无 GUI 冒烟：spawn dsh，断言 URL 行 + HTTP 200（--runtime 用内置运行时）
+  install-runtime.mjs   fills resources/ at build time (Node dist + dsh tree + icons)
+  smoke.mjs             headless smoke test: spawn dsh, assert URL line + HTTP 200
+assets/
+  wordmark.svg          project wordmark
 ```
 
-## 已知限制（V1）
+## Known limitations (v1)
 
-- 安装包约 150MB+（内置 Node + dsh 完整依赖树），未做体积裁剪
-- macOS 无签名公证，首次运行需右键"打开"
-- dsh 处于 developer preview，兼容性破坏频繁；壳锁定 `@deepseek-ai/dsh` 版本，升级需重新打包验证
-- 无自动更新（electron-updater），留作 V2
+- Installer ≈ 150 MB+ (bundled Node + full dsh dependency tree); size trimming is on the roadmap
+- macOS builds are unsigned — Gatekeeper requires right-click → Open on first run
+- dsh is in developer preview and iterates fast; the shell pins `@deepseek-ai/dsh` and upgrades require re-packaging
+- No auto-update yet (electron-updater is planned)
+- The settings page does not yet expose desktop toggles (auto-start is in the tray menu); a desktop-integration plugin is planned
+
+## Feedback
+
+Found a bug? Have a feature idea? **Issues are very welcome** — bug reports, usage questions, and suggestions all help.
+
+- [Open an issue](https://github.com/HaoyueQin/deepseek-harness-desktop/issues) (English or 中文, either is fine)
+- For harness-level problems, also check upstream [deepseek-harness discussions](https://github.com/deepseek-ai/deepseek-harness/discussions)
+
+## License
+
+[MIT](LICENSE). The DeepSeek Harness itself is [MIT](https://github.com/deepseek-ai/deepseek-harness) © DeepSeek AI.
