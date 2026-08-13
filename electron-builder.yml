@@ -37,6 +37,8 @@ nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
   shortcutName: DeepSeek Harness Desktop
+  # 安装/更新时自动强杀运行中的应用（托盘常驻，默认"请手动关闭"会卡死）
+  include: build/installer-close-app.nsh
 
 mac:
   target:
