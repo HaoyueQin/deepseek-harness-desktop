@@ -1,0 +1,128 @@
+/**
+ * 构建时：填充 resources/（生产运行时）——
+ *   resources/runtime/node/   内置 Node 24 LTS 官方发行版（按当前平台）
+ *   resources/dsh/            @deepseek-ai/dsh 完整依赖树（npm install --omit=dev）
+ *   resources/icon.png        应用图标（1024px，来自 dsh 仓库 favicon.svg）
+ *
+ * 打包时经 electron-builder extraResources 原样带入安装包。install-runtime 在
+ * 目标平台（或对应 CI runner）上执行，保证下载的 Node/dsh 与产物平台一致。
+ */
+
+import { createWriteStream, existsSync, mkdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { execFileSync, spawn } from 'node:child_process'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const root = join(fileURLToPath(new URL('..', import.meta.url)))
+const resources = join(root, 'resources')
+const DSH_VERSION = process.env.DSH_VERSION ?? '0.1.0-rc.6'
+// npm install 走调用方 registry（本机镜像配置或 CI 默认），不写死
+const REGISTRY = process.env.npm_config_registry ?? 'https://registry.npmjs.org'
+
+/** 取 Node 24 LTS 当前最新 patch 版本（nodejs.org dist/index.json）。 */
+async function latestNode24() {
+  const proxy = process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY
+  const args = ['-s', 'https://nodejs.org/dist/index.json']
+  if (proxy) args.push('--proxy', proxy)
+  const out = execFileSync('curl', args, { encoding: 'utf8' })
+  const list = JSON.parse(out)
+  const v24 = list.find((e) => e.version.startsWith('v24.') && e.lts !== false)
+  if (v24 === undefined) throw new Error('dist/index.json 中无 Node 24 LTS 版本')
+  return v24.version // 形如 "v24.10.1"
+}
+
+function nodeDownloadInfo(version) {
+  const base = `https://nodejs.org/dist/${version}`
+  if (process.platform === 'win32') return { url: `${base}/node-${version}-win-x64.zip`, kind: 'zip' }
+  if (process.platform === 'darwin') {
+    const a = process.arch === 'arm64' ? 'arm64' : 'x64'
+    return { url: `${base}/node-${version}-darwin-${a}.tar.gz`, kind: 'tgz' }
+  }
+  return { url: `${base}/node-${version}-linux-x64.tar.gz`, kind: 'tgz' }
+}
+
+async function download(url, dest) {
+  console.log(`[install-runtime] 下载 ${url}`)
+  const args = ['-sL', '-o', dest, '--max-time', '600', '--retry', '3']
+  // 环境变量设置了 HTTP(S)_PROXY 时走代理（Node 24 的 --use-env-proxy 可让
+  // fetch 也走该代理，但 curl 直读更稳）；仅本脚本下载阶段生效。
+  const proxy = process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY
+  if (proxy) args.push('--proxy', proxy)
+  args.push(url)
+  execFileSync('curl', args, { stdio: 'inherit' })
+}
+
+async function installNode() {
+  const target = join(resources, 'runtime', 'node')
+  const marker = join(resources, 'runtime', '.node-installed')
+  if (existsSync(marker) && existsSync(target)) {
+    console.log(`[install-runtime] Node 已存在，跳过（删除 ${marker} 可强制重装）`)
+    return
+  }
+  const version = await latestNode24()
+  const info = nodeDownloadInfo(version)
+  const archive = join(tmpdir(), info.kind === 'zip' ? 'node.zip' : 'node.tgz')
+  await download(info.url, archive)
+  rmSync(target, { recursive: true, force: true })
+  mkdirSync(target, { recursive: true })
+  if (info.kind === 'zip') {
+    // Windows 无 unzip 保证，用 PowerShell Expand-Archive
+    const staging = join(resources, 'runtime', 'node-tmp')
+    rmSync(staging, { recursive: true, force: true })
+    execFileSync('powershell', ['-NoProfile', '-Command',
+      `Expand-Archive -LiteralPath '${archive}' -DestinationPath '${staging}' -Force`], { stdio: 'inherit' })
+    const inner = join(staging, `node-${version}-win-x64`)
+    renameSync(join(inner, 'node.exe'), join(target, 'node.exe'))
+    renameSync(join(inner, 'LICENSE'), join(target, 'LICENSE'))
+    rmSync(staging, { recursive: true, force: true })
+  } else {
+    execFileSync('tar', ['-xzf', archive, '-C', target, '--strip-components=1'], { stdio: 'inherit' })
+  }
+  rmSync(archive, { force: true })
+  writeFileSync(marker, new Date().toISOString())
+  console.log(`[install-runtime] Node ${version} 就绪 → ${target}`)
+}
+
+/** dsh 依赖树（npm install 到 resources/dsh，前端 dist 随 @deepseek-ai/dsh-web-frontend 递归带入）。 */
+async function installDsh() {
+  const target = join(resources, 'dsh')
+  const marker = join(target, '.dsh-installed')
+  if (existsSync(marker)) {
+    console.log(`[install-runtime] dsh 已存在，跳过（删除 ${marker} 可强制重装）`)
+    return
+  }
+  rmSync(target, { recursive: true, force: true })
+  mkdirSync(target, { recursive: true })
+  writeFileSync(join(target, 'package.json'),
+    JSON.stringify({ name: 'dsh-desktop-runtime', private: true, dependencies: { '@deepseek-ai/dsh': DSH_VERSION } }, null, 2))
+  console.log(`[install-runtime] npm 安装 @deepseek-ai/dsh@${DSH_VERSION} (registry=${REGISTRY})`)
+  await new Promise((resolve, reject) => {
+    const child = spawn('npm', ['install', '--omit=dev', '--no-audit', '--no-fund', '--registry', REGISTRY], {
+      cwd: target, stdio: 'inherit', windowsHide: true, shell: process.platform === 'win32',
+    })
+    child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`npm install 退出码 ${String(code)}`))))
+  })
+  writeFileSync(marker, new Date().toISOString())
+  console.log(`[install-runtime] dsh 依赖树就绪 → ${target}`)
+}
+
+/** 图标：resources/icon.png（运行时/托盘）+ build/icon.png（electron-builder 源），同源 1024px。 */
+async function installIcon() {
+  const outRuntime = join(resources, 'icon.png')
+  const outBuild = join(root, 'build', 'icon.png')
+  if (existsSync(outRuntime) && statSync(outRuntime).size > 0) { console.log('[install-runtime] icon.png 已存在，跳过'); return }
+  // CI 无本地 fork：用 DSH_ICON_SVG 指定 favicon.svg 路径；本机默认读隔壁 fork 仓库
+  const svg = process.env.DSH_ICON_SVG ?? join(root, '..', 'deepseek-harness', 'apps', 'web', 'public', 'favicon.svg')
+  if (!existsSync(svg)) { console.warn(`[install-runtime] 未找到 ${svg}，跳过图标`); return }
+  const sharp = (await import('sharp')).default
+  await sharp(svg, { density: 300 }).resize(1024, 1024).png().toFile(outRuntime)
+  mkdirSync(join(root, 'build'), { recursive: true })
+  await sharp(svg, { density: 300 }).resize(1024, 1024).png().toFile(outBuild)
+  console.log(`[install-runtime] 图标就绪 → ${outRuntime} + ${outBuild}`)
+}
+
+await installNode()
+await installDsh()
+await installIcon()
+console.log('[install-runtime] 完成')

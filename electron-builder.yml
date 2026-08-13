@@ -1,0 +1,49 @@
+# electron-builder 配置。阶段 4 本地打包验证时定稿；此处为完整版。
+appId: io.github.haoyueqin.deepseek-harness-desktop
+productName: DeepSeek Harness Desktop
+copyright: MIT
+
+directories:
+  output: release
+  buildResources: build
+
+# 主进程代码（tsc 产物）+ package.json 进 asar；dsh 运行时/Node 发行版走 extraResources
+files:
+  - dist/**/*
+  - package.json
+
+# dsh 依赖树与 Node 运行时不进 asar：
+# dsh 使用 createRequire/worker_threads/动态 import，asar 内文件 spawn 受限。
+# resources/ 布局：dsh/（node_modules + bin.js）、runtime/（Node 发行版）、icon.png
+extraResources:
+  - from: resources
+    to: resources
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.png
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: DeepSeek Harness Desktop
+
+mac:
+  target:
+    - dmg
+  icon: build/icon.png
+  category: public.app-category.developer-tools
+  # 无开发者证书：出未签名包，用户首次需右键打开
+  identity: null
+  hardenedRuntime: false
+  gatekeeperAssess: false
+
+linux:
+  target:
+    - AppImage
+    - deb
+  icon: build/icon.png
+  category: Development
+  maintainer: HaoyueQin <278892763+HaoyueQin@users.noreply.github.com>

@@ -1,0 +1,17 @@
+node_modules/
+dist/
+release/
+*.log
+
+# 构建时生成（install-runtime.mjs / icons.mjs）
+resources/runtime/
+resources/dsh/
+resources/icon.png
+build/icon.png
+build/icon.ico
+build/icon.icns
+
+.DS_Store
+
+# 本地工具目录
+.zcode/
