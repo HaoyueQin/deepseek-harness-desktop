@@ -8,7 +8,7 @@
  * 目标平台（或对应 CI runner）上执行，保证下载的 Node/dsh 与产物平台一致。
  */
 
-import { createWriteStream, existsSync, mkdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { execFileSync, spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -84,6 +84,21 @@ async function installNode() {
   console.log(`[install-runtime] Node ${version} 就绪 → ${target}`)
 }
 
+/** 平台清理：保留当前平台的 node-pty prebuild 与 sharp 二进制，删除其余（省 ~48M）。 */
+function cleanNativePlatforms(dshDir) {
+  const ptyDir = join(dshDir, 'node_modules', 'node-pty', 'prebuilds')
+  const ptyKeep = { win32: `win32-${process.arch}`, darwin: `darwin-${process.arch}`, linux: `linux-${process.arch}` }[process.platform]
+  for (const d of readdirSync(ptyDir)) {
+    if (d !== ptyKeep) rmSync(join(ptyDir, d), { recursive: true, force: true })
+  }
+  const imgDir = join(dshDir, 'node_modules', '@img')
+  const sharpKeep = `sharp-${process.platform}-${process.arch}` // win32-x64 / darwin-arm64 / linux-x64
+  for (const d of readdirSync(imgDir)) {
+    if (d !== sharpKeep && d !== 'colour') rmSync(join(imgDir, d), { recursive: true, force: true })
+  }
+  console.log(`[install-runtime] 平台清理完成（保留 ${ptyKeep} / ${sharpKeep}）`)
+}
+
 /** dsh 依赖树（npm install 到 resources/dsh，前端 dist 随 @deepseek-ai/dsh-web-frontend 递归带入）。 */
 async function installDsh() {
   const target = join(resources, 'dsh')
@@ -125,4 +140,6 @@ async function installIcon() {
 await installNode()
 await installDsh()
 await installIcon()
+// 平台清理（幂等，独立于 npm install marker——已装好的依赖树直接清理，无需重装）
+if (existsSync(join(resources, 'dsh', 'node_modules'))) cleanNativePlatforms(join(resources, 'dsh'))
 console.log('[install-runtime] 完成')

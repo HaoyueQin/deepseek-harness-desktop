@@ -7,6 +7,9 @@ directories:
   output: release
   buildResources: build
 
+# 只打包 en-US + zh-CN 语言包（省 ~40M）
+electronLanguages: [en-US, zh-CN]
+
 # 主进程代码（tsc 产物）+ package.json 进 asar；dsh 运行时/Node 发行版走 extraResources
 files:
   - dist/**/*
