@@ -16,12 +16,22 @@ jobs:
         include:
           - os: windows-latest
             node-arch: win-x64
-          - os: macos-13
-            node-arch: darwin-x64
+            npm-arch: x64
+            eb-arch: x64
+          # macos-13（Intel runner）已从公共仓库退役；macOS 两个架构都由
+          # macos-14（arm64）构建：arm64 原生 + x64 交叉构建
           - os: macos-14
             node-arch: darwin-arm64
+            npm-arch: arm64
+            eb-arch: arm64
+          - os: macos-14
+            node-arch: darwin-x64
+            npm-arch: x64
+            eb-arch: x64
           - os: ubuntu-latest
             node-arch: linux-x64
+            npm-arch: x64
+            eb-arch: x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -50,6 +60,8 @@ jobs:
         env:
           DSH_ICON_SVG: ${{ github.workspace }}/build/favicon-source.svg
           npm_config_registry: https://registry.npmmirror.com
+          # 交叉构建（macos-14 arm64 → x64）：让 npm 安装目标架构的原生模块 prebuilt
+          npm_config_arch: ${{ matrix.npm-arch }}
 
       - name: Build app (tsc)
         run: npm run build
@@ -60,7 +72,7 @@ jobs:
         run: node scripts/smoke.mjs --runtime
 
       - name: Package (electron-builder)
-        run: npx electron-builder --publish never
+        run: npx electron-builder --publish never --${{ matrix.eb-arch }}
         env:
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
           ELECTRON_BUILDER_BINARIES_MIRROR: https://npmmirror.com/mirrors/electron-builder-binaries/
