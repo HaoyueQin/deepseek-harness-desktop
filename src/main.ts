@@ -12,7 +12,11 @@ import { createTray, type TrayHandlers } from './tray.js'
 import { dshBinScript, dshHomeDir, iconPath, nodeExecutable, preloadPath } from './paths.js'
 import { getLaunchMinimized, setLaunchMinimized } from './settings.js'
 import { isAutostartEnabled, setAutostart } from './autostart.js'
+import { initUpdater, checkForUpdates as runUpdateCheck, setRunInstaller } from './updater.js'
 import { join } from 'node:path'
+import { copyFileSync, mkdirSync } from 'node:fs'
+import { spawn } from 'node:child_process'
+import { desktopPluginDir } from './paths.js'
 import { log } from './log.js'
 
 let win: BrowserWindow | null = null
@@ -54,13 +58,8 @@ function registerAppIpc(): void {
     const err = await shell.openPath(p)
     return err === '' ? { ok: true } : { ok: false, error: err }
   })
-  // checkForUpdates 占位（Task 4 接 electron-updater 真实实现）
-  ipcMain.handle('dsh-update:check', () => ({
-    current: app.getVersion(),
-    latest: null,
-    downloading: false,
-    downloaded: false,
-  }))
+  // checkForUpdates 接 electron-updater 真实实现（win/linux；mac 返回 current）
+  ipcMain.handle('dsh-update:check', () => runUpdateCheck())
 }
 
 const LOADING_HTML = `<!doctype html>
@@ -80,6 +79,25 @@ function showWindow(): void {
   if (win.isMinimized()) win.restore()
   win.show()
   win.focus()
+}
+
+/**
+ * 同步桌面集成插件到 dsh 的扁平回退目录（$DSH_HOME/profiles/node_modules/，
+ * 由 healProfilesModuleFallback 维护），使 --patch 的 name 可被 profile 解析。
+ * 幂等：每次 spawn 前同步，失败仅告警不阻断。
+ */
+function ensureDesktopPlugin(dshHome: string): void {
+  const src = desktopPluginDir()
+  const target = join(dshHome, 'profiles', 'node_modules', 'dsh-desktop-integration')
+  try {
+    mkdirSync(join(target, 'lib'), { recursive: true })
+    copyFileSync(join(src, 'package.json'), join(target, 'package.json'))
+    copyFileSync(join(src, 'lib', 'index.js'), join(target, 'lib', 'index.js'))
+    copyFileSync(join(src, 'lib', 'client.js'), join(target, 'lib', 'client.js'))
+    log('desktop-plugin: 已同步到 ' + target)
+  } catch (err) {
+    log(`desktop-plugin: 同步失败 ${String(err)}`)
+  }
 }
 
 /**
@@ -188,6 +206,18 @@ async function quitApp(): Promise<void> {
   app.quit()
 }
 
+// updater 需要「退出后运行安装包」——复用 quitApp 的停止逻辑，quit 后 spawn 安装包
+setRunInstaller(async (info) => {
+  const installerPath = (info as { path?: string }).path
+  if (installerPath === undefined || installerPath === '') {
+    log(`updater: 安装包路径缺失（${info.version}），请手动从 Release 下载`)
+    return
+  }
+  log(`updater: 退出并运行安装包 ${installerPath}`)
+  await quitApp()
+  spawn(installerPath, [], { detached: true, stdio: 'ignore' }).unref()
+})
+
 function main(): void {
   app.on('second-instance', () => showWindow())
 
@@ -199,11 +229,15 @@ function main(): void {
     const trayHandlers: TrayHandlers = { show: showWindow, quit: () => void quitApp() }
     createTray(iconPath(), trayHandlers)
 
+    // 启动 15s 后静默检查更新（网络慢/失败静默，仅写日志）
+    setTimeout(() => initUpdater(), 15_000)
+
     createWindow()
     await win?.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(LOADING_HTML)}`)
     if (quitting) return
 
     log(`spawn dsh: node=${nodeExecutable()} bin=${dshBinScript()} DSH_HOME=${dshHomeDir()}`)
+    ensureDesktopPlugin(dshHomeDir())
     dsh = startDsh({
       nodePath: nodeExecutable(),
       dshBin: dshBinScript(),

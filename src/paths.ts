@@ -56,3 +56,13 @@ export function iconPath(): string {
 export function preloadPath(): string {
   return join(devRoot(), 'dist', 'preload.cjs')
 }
+
+/** 桌面集成插件 patch（dev 在项目根 resources/，prod 在 extraResources）。 */
+export function desktopPatchPath(): string {
+  return join(resourcesDir(), 'desktop-patch.yml')
+}
+
+/** 桌面集成插件包目录（dev 项目根 resources/，prod extraResources）。 */
+export function desktopPluginDir(): string {
+  return join(resourcesDir(), 'desktop-integration')
+}

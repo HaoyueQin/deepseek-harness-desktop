@@ -10,6 +10,11 @@ directories:
 # 只打包 en-US + zh-CN 语言包（省 ~40M）
 electronLanguages: [en-US, zh-CN]
 
+# 自动更新元数据发布源（electron-updater 读取；releases/latest 重定向到最新 tag）
+publish:
+  provider: generic
+  url: https://github.com/HaoyueQin/deepseek-harness-desktop/releases/latest/download
+
 # 主进程代码（tsc 产物）+ package.json 进 asar；dsh 运行时/Node 发行版走 extraResources
 files:
   - dist/**/*
@@ -50,3 +55,5 @@ linux:
   icon: build/icon.png
   category: Development
   maintainer: HaoyueQin <278892763+HaoyueQin@users.noreply.github.com>
+  # AppImage 固定文件名：更新替换路径稳定（版本号只在 latest-linux.yml 里）
+  artifactName: ${name}-${version}.AppImage
