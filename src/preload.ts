@@ -1,5 +1,5 @@
 /**
- * preload：contextBridge 暴露窗口控制 API 给注入脚本。
+ * preload：contextBridge 暴露窗口控制 + 桌面集成 API 给注入脚本。
  * 最小面——只透传 IPC 调用，不暴露任何 Node/Electron 能力。
  */
 
@@ -12,4 +12,18 @@ contextBridge.exposeInMainWorld('dshDesktop', {
   onMaximized: (cb: (maximized: boolean) => void): void => {
     ipcRenderer.on('dsh-window:maximized', (_event, maximized: boolean) => cb(maximized))
   },
+  autostart: {
+    get: (): Promise<boolean> => ipcRenderer.invoke('dsh-app:get-autostart'),
+    set: (enabled: boolean): Promise<void> => ipcRenderer.invoke('dsh-app:set-autostart', enabled),
+  },
+  launchMinimized: {
+    get: (): Promise<boolean> => ipcRenderer.invoke('dsh-settings:get-launch-minimized'),
+    set: (enabled: boolean): Promise<void> => ipcRenderer.invoke('dsh-settings:set-launch-minimized', enabled),
+  },
+  getInfo: (): Promise<{ appVersion: string; dshHome: string; logDir: string }> =>
+    ipcRenderer.invoke('dsh-app:get-info'),
+  openPath: (p: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('dsh-app:open-path', p),
+  checkForUpdates: (): Promise<{ current: string; latest: string | null; downloading: boolean; downloaded: boolean }> =>
+    ipcRenderer.invoke('dsh-update:check'),
 })

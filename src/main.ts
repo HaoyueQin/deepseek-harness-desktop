@@ -6,10 +6,13 @@
  * 自家子进程 stdout 解析，无外部输入进入 webPreferences。
  */
 
-import { app, BrowserWindow, dialog, ipcMain, Menu } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron'
 import { startDsh, type DshControl } from './dsh/spawn.js'
 import { createTray, type TrayHandlers } from './tray.js'
 import { dshBinScript, dshHomeDir, iconPath, nodeExecutable, preloadPath } from './paths.js'
+import { getLaunchMinimized, setLaunchMinimized } from './settings.js'
+import { isAutostartEnabled, setAutostart } from './autostart.js'
+import { join } from 'node:path'
 import { log } from './log.js'
 
 let win: BrowserWindow | null = null
@@ -31,6 +34,33 @@ function registerWindowControls(): void {
     // 关闭 = 隐藏到托盘（与窗口 X 行为一致）；退出走托盘菜单
     BrowserWindow.fromWebContents(event.sender)?.hide()
   })
+}
+
+// 桌面集成 IPC（设置页「桌面」分区插件经 preload 桥调用）
+function registerAppIpc(): void {
+  ipcMain.handle('dsh-app:get-autostart', () => isAutostartEnabled())
+  ipcMain.handle('dsh-app:set-autostart', (_event, enabled: boolean) => setAutostart(enabled))
+  ipcMain.handle('dsh-settings:get-launch-minimized', () => getLaunchMinimized())
+  ipcMain.handle('dsh-settings:set-launch-minimized', (_event, enabled: boolean) => setLaunchMinimized(enabled))
+  ipcMain.handle('dsh-app:get-info', () => ({
+    appVersion: app.getVersion(),
+    dshHome: dshHomeDir(),
+    logDir: join(app.getPath('userData'), 'logs'),
+  }))
+  ipcMain.handle('dsh-app:open-path', async (_event, p: unknown) => {
+    // 白名单：只允许打开 DSH_HOME 或日志目录
+    const allowed = [dshHomeDir(), join(app.getPath('userData'), 'logs')]
+    if (typeof p !== 'string' || !allowed.includes(p)) return { ok: false, error: 'forbidden' }
+    const err = await shell.openPath(p)
+    return err === '' ? { ok: true } : { ok: false, error: err }
+  })
+  // checkForUpdates 占位（Task 4 接 electron-updater 真实实现）
+  ipcMain.handle('dsh-update:check', () => ({
+    current: app.getVersion(),
+    latest: null,
+    downloading: false,
+    downloaded: false,
+  }))
 }
 
 const LOADING_HTML = `<!doctype html>
@@ -140,7 +170,7 @@ function createWindow(): void {
   const sendMaximized = (): void => { win?.webContents.send('dsh-window:maximized', win?.isMaximized()) }
   win.on('maximize', sendMaximized)
   win.on('unmaximize', sendMaximized)
-  win.once('ready-to-show', () => win?.show())
+  win.once('ready-to-show', () => { if (!getLaunchMinimized()) win?.show() })
   injectTitlebar()
   // 关闭 = 隐藏到托盘；quitting 时放行
   win.on('close', (event) => {
@@ -165,6 +195,7 @@ function main(): void {
     // 去掉 File/Edit/View/Window 菜单栏（mac 上连同编辑快捷键一起移除，V1 可接受）
     Menu.setApplicationMenu(null)
     registerWindowControls()
+    registerAppIpc()
     const trayHandlers: TrayHandlers = { show: showWindow, quit: () => void quitApp() }
     createTray(iconPath(), trayHandlers)
 
