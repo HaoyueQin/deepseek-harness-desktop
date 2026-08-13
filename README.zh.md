@@ -26,6 +26,10 @@
 - **单实例** — 重复启动会聚焦已有窗口
 - **插件自由不受限** — 动态插件（`cordis_define`/`cordis_run`）、`$DSH_HOME/cordis.patch.yml`、npm 插件生态均与 Web 版完全一致
 
+## 界面预览
+
+![DeepSeek Harness Desktop 主界面](./assets/screenshots/main-window.png)
+
 ## 安装
 
 从 [Releases](https://github.com/HaoyueQin/deepseek-harness-desktop/releases) 下载对应平台的安装包：

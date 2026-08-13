@@ -26,6 +26,10 @@ English | [简体中文](README.zh.md)
 - **Single instance** — launching again focuses the existing window
 - **Full plugin freedom** — dynamic plugins (`cordis_define`/`cordis_run`), `$DSH_HOME/cordis.patch.yml`, and the npm plugin ecosystem all work exactly as in the web edition
 
+## Screenshot
+
+![DeepSeek Harness Desktop main window](./assets/screenshots/main-window.png)
+
 ## Install
 
 Download the installer for your platform from the [Releases](https://github.com/HaoyueQin/deepseek-harness-desktop/releases) page:
