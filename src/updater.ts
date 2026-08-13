@@ -7,8 +7,12 @@
  */
 
 import { app, dialog } from 'electron'
-import { autoUpdater, type UpdateInfo } from 'electron-updater'
+// autoUpdater 是 CJS getter 导出，ESM named import 无法静态识别——default 导入后解构
+import electronUpdater from 'electron-updater'
+import type { UpdateInfo } from 'electron-updater'
 import { log } from './log.js'
+
+const { autoUpdater } = electronUpdater
 
 export interface UpdateStatus {
   current: string

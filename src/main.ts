@@ -8,7 +8,7 @@
 
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron'
 import { startDsh, type DshControl } from './dsh/spawn.js'
-import { createTray, type TrayHandlers } from './tray.js'
+import { createTray, syncTrayAutostart, type TrayHandlers } from './tray.js'
 import { dshBinScript, dshHomeDir, iconPath, nodeExecutable, preloadPath } from './paths.js'
 import { getLaunchMinimized, setLaunchMinimized } from './settings.js'
 import { isAutostartEnabled, setAutostart } from './autostart.js'
@@ -43,7 +43,10 @@ function registerWindowControls(): void {
 // 桌面集成 IPC（设置页「桌面」分区插件经 preload 桥调用）
 function registerAppIpc(): void {
   ipcMain.handle('dsh-app:get-autostart', () => isAutostartEnabled())
-  ipcMain.handle('dsh-app:set-autostart', (_event, enabled: boolean) => setAutostart(enabled))
+  ipcMain.handle('dsh-app:set-autostart', (_event, enabled: boolean) => {
+    setAutostart(enabled)
+    syncTrayAutostart() // 托盘菜单勾选同步（设置页↔托盘双向一致）
+  })
   ipcMain.handle('dsh-settings:get-launch-minimized', () => getLaunchMinimized())
   ipcMain.handle('dsh-settings:set-launch-minimized', (_event, enabled: boolean) => setLaunchMinimized(enabled))
   ipcMain.handle('dsh-app:get-info', () => ({
