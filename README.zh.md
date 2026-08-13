@@ -25,6 +25,8 @@
 - **数据隔离** — `DSH_HOME` 指向应用专属数据目录，不污染默认 `~/.dsh`
 - **单实例** — 重复启动会聚焦已有窗口
 - **插件自由不受限** — 动态插件（`cordis_define`/`cordis_run`）、`$DSH_HOME/cordis.patch.yml`、npm 插件生态均与 Web 版完全一致
+- **设置页桌面分区** — 设置页新增「桌面」标签页（UI 契合 harness 设计）：开机自启开关、启动最小化开关、关于卡片（版本/数据/日志目录）、更新检查按钮，均与托盘菜单双向同步
+- **自动更新** — 启动 15 秒后静默检查：Windows 下载后引导运行安装包（未签名无法静默安装）；Linux AppImage 全自动替换；macOS 暂不支持（需签名）
 
 ## 界面预览
 
@@ -92,15 +94,20 @@ CI 工作流（`.github/workflows/release.yml`）在每个 `v*` tag 上构建全
 ```
 src/
   main.ts          应用生命周期：单实例锁、窗口、托盘、dsh 编排
-  paths.ts         dev/prod 资源路径解析（内置 dsh、Node、preload）
-  dsh/spawn.ts     spawn dsh web --port 0，解析 stdout URL 行，优雅停止
+  paths.ts         dev/prod 资源路径解析（内置 dsh、Node、preload、patch）
+  settings.ts      壳设置（userData/settings.json — 启动最小化）
+  updater.ts       electron-updater（Windows 引导 / Linux AppImage 全自动）
+  dsh/spawn.ts     spawn dsh web --port 0 --patch，解析 stdout URL 行，优雅停止
   dsh/ready.ts     HTTP 就绪探测
-  tray.ts          托盘菜单（打开 / 开机自启 / 退出）
+  tray.ts          托盘菜单（打开 / 开机自启 / 退出）+ 自启勾选同步
   autostart.ts     开机自启（win/mac 原生 + linux XDG 文件）
-  preload.ts       contextBridge 窗口控制 IPC（编译为 CJS）
+  preload.ts       contextBridge 桥（窗口控制 + 桌面 IPC；编译为 CJS）
 scripts/
-  install-runtime.mjs  构建时填充 resources/（Node 发行版 + dsh 依赖树 + 图标）
+  install-runtime.mjs  构建时填充 resources/（Node + dsh 树 + 图标 + 平台裁剪）
   smoke.mjs            无 GUI 冒烟：spawn dsh，断言 URL 行 + HTTP 200
+resources/
+  desktop-integration/ 设置页「桌面」分区插件（dsh 浏览器 half）
+  desktop-patch.yml    壳注入的 patch（挂载该插件）
 assets/
   wordmark.svg         项目标识
 ```
@@ -108,10 +115,9 @@ assets/
 ## 已知限制（v1）
 
 - 安装包约 150MB+（内置 Node + dsh 完整依赖树），体积裁剪在路线图上
-- macOS 构建未签名 — Gatekeeper 首次运行需右键 → 打开
+- macOS 构建未签名 — Gatekeeper 首次运行需右键 → 打开；macOS 暂不支持自动更新（需签名证书）
 - dsh 处于 developer preview，迭代快速；壳锁定 `@deepseek-ai/dsh` 版本，升级需重新打包验证
-- 暂不支持自动更新（electron-updater 在规划中）
-- 设置页暂未提供桌面开关（开机自启在托盘菜单）；桌面集成插件在规划中
+- Windows 自动更新为引导模式（下载后运行安装包）而非静默安装，源于未签名构建
 
 ## 反馈
 

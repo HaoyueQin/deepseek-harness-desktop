@@ -25,6 +25,8 @@ English | [简体中文](README.zh.md)
 - **Data isolation** — `DSH_HOME` points to the app's own data directory; your default `~/.dsh` stays untouched
 - **Single instance** — launching again focuses the existing window
 - **Full plugin freedom** — dynamic plugins (`cordis_define`/`cordis_run`), `$DSH_HOME/cordis.patch.yml`, and the npm plugin ecosystem all work exactly as in the web edition
+- **Desktop settings section** — the app's Settings page gains a "Desktop" tab (styled to match the harness UI): auto-start toggle, launch-minimized toggle, About card (version / data / log dirs), and a check-for-updates button — all in sync with the tray menu
+- **Auto-update** — checks silently 15s after launch: Windows downloads and guides you to run the installer (unsigned builds can't install silently); Linux AppImage replaces itself automatically; macOS excluded (needs signing)
 
 ## Screenshot
 
@@ -92,15 +94,20 @@ The CI workflow (`.github/workflows/release.yml`) builds all three platforms on 
 ```
 src/
   main.ts          app lifecycle: single-instance lock, window, tray, dsh orchestration
-  paths.ts         dev/prod resource resolution (bundled dsh, Node, preload)
-  dsh/spawn.ts     spawn dsh web --port 0; parse stdout URL line; graceful stop
+  paths.ts         dev/prod resource resolution (bundled dsh, Node, preload, patch)
+  settings.ts      shell settings (userData/settings.json — launch-minimized)
+  updater.ts       electron-updater (Windows guided / Linux AppImage auto)
+  dsh/spawn.ts     spawn dsh web --port 0 --patch; parse stdout URL line; graceful stop
   dsh/ready.ts     HTTP readiness probe
-  tray.ts          tray menu (open / auto-start / quit)
+  tray.ts          tray menu (open / auto-start / quit) + autostart sync
   autostart.ts     auto-start (native on win/mac; XDG file on linux)
-  preload.ts       contextBridge window-control IPC (compiled to CJS)
+  preload.ts       contextBridge bridge (window controls + desktop IPC; compiled to CJS)
 scripts/
-  install-runtime.mjs   fills resources/ at build time (Node dist + dsh tree + icons)
+  install-runtime.mjs   fills resources/ at build time (Node dist + dsh tree + icons + platform trim)
   smoke.mjs             headless smoke test: spawn dsh, assert URL line + HTTP 200
+resources/
+  desktop-integration/  settings "Desktop" section plugin (dsh browser half)
+  desktop-patch.yml     shell-injected patch mounting the plugin
 assets/
   wordmark.svg          project wordmark
 ```
@@ -108,10 +115,9 @@ assets/
 ## Known limitations (v1)
 
 - Installer ≈ 150 MB+ (bundled Node + full dsh dependency tree); size trimming is on the roadmap
-- macOS builds are unsigned — Gatekeeper requires right-click → Open on first run
+- macOS builds are unsigned — Gatekeeper requires right-click → Open on first run; macOS has no auto-update (needs a signing certificate)
 - dsh is in developer preview and iterates fast; the shell pins `@deepseek-ai/dsh` and upgrades require re-packaging
-- No auto-update yet (electron-updater is planned)
-- The settings page does not yet expose desktop toggles (auto-start is in the tray menu); a desktop-integration plugin is planned
+- Windows auto-update is guided (downloads then runs the installer) rather than silent, due to the unsigned build
 
 ## Feedback
 
