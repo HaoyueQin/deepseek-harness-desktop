@@ -31,7 +31,9 @@ jobs:
           node-version: 24
 
       # 图标源：dsh 官方仓库的 favicon.svg（安装包/托盘/窗口图标）
+      # shell: bash —— Windows runner 默认 PowerShell，反斜杠续行会破坏 URL
       - name: Fetch favicon source
+        shell: bash
         run: |
           mkdir -p build
           curl -sSL -o build/favicon-source.svg \
