@@ -1,0 +1,92 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+# 三平台 matrix：每 job 在对应 runner 上执行 install-runtime（下载该平台 Node +
+# npm 安装 dsh 依赖树）+ electron-builder 出包，产物挂 GitHub Release。
+# npm registry 用 npmmirror（国内网络）；electron-builder 的组件下载用镜像。
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            node-arch: win-x64
+          - os: macos-13
+            node-arch: darwin-x64
+          - os: macos-14
+            node-arch: darwin-arm64
+          - os: ubuntu-latest
+            node-arch: linux-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # 图标源：dsh 官方仓库的 favicon.svg（安装包/托盘/窗口图标）
+      - name: Fetch favicon source
+        run: |
+          mkdir -p build
+          curl -sSL -o build/favicon-source.svg \
+            https://raw.githubusercontent.com/deepseek-ai/deepseek-harness/master/apps/web/public/favicon.svg
+
+      - name: Install build deps
+        run: npm ci
+        env:
+          ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+          ELECTRON_BUILDER_BINARIES_MIRROR: https://npmmirror.com/mirrors/electron-builder-binaries/
+
+      - name: Build runtime (Node + dsh + icons)
+        run: npm run build:runtime
+        env:
+          DSH_ICON_SVG: ${{ github.workspace }}/build/favicon-source.svg
+          npm_config_registry: https://registry.npmmirror.com
+
+      - name: Build app (tsc)
+        run: npm run build
+
+      # 无 GUI 冒烟：用内置 Node + resources/dsh 验证 dsh web 启动（Linux CI
+      # 无显示服务器，跳过 GUI 验证；web 进程无需 X）
+      - name: Smoke test (headless)
+        run: node scripts/smoke.mjs --runtime
+
+      - name: Package (electron-builder)
+        run: npx electron-builder --publish never
+        env:
+          ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+          ELECTRON_BUILDER_BINARIES_MIRROR: https://npmmirror.com/mirrors/electron-builder-binaries/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-${{ matrix.os }}-${{ matrix.node-arch }}
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.AppImage
+            release/*.deb
+          if-no-files-found: warn
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**
+          generate_release_notes: true
