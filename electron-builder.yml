@@ -55,5 +55,6 @@ linux:
   icon: build/icon.png
   category: Development
   maintainer: HaoyueQin <278892763+HaoyueQin@users.noreply.github.com>
-  # AppImage 固定文件名：更新替换路径稳定（版本号只在 latest-linux.yml 里）
-  artifactName: ${name}-${version}.AppImage
+  # 按 target 区分扩展名：AppImage 固定名（更新替换稳定）、deb 正常名。
+  # 之前写死 .AppImage 后缀导致 deb 也被命名为 .AppImage，release/*.deb 匹配不到未上传。
+  artifactName: ${name}-${version}.${ext}
