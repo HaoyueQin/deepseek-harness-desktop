@@ -84,7 +84,7 @@ async function installNode() {
   console.log(`[install-runtime] Node ${version} 就绪 → ${target}`)
 }
 
-/** 平台清理：保留当前平台的 node-pty prebuild 与 sharp 二进制，删除其余（省 ~48M）。 */
+/** 平台清理：保留当前平台的 node-pty prebuild 与 sharp 二进制及其 libvips 运行时，删除其余（省 ~48M）。 */
 function cleanNativePlatforms(dshDir) {
   const ptyDir = join(dshDir, 'node_modules', 'node-pty', 'prebuilds')
   const ptyKeep = { win32: `win32-${process.arch}`, darwin: `darwin-${process.arch}`, linux: `linux-${process.arch}` }[process.platform]
@@ -92,11 +92,17 @@ function cleanNativePlatforms(dshDir) {
     if (d !== ptyKeep) rmSync(join(ptyDir, d), { recursive: true, force: true })
   }
   const imgDir = join(dshDir, 'node_modules', '@img')
-  const sharpKeep = `sharp-${process.platform}-${process.arch}` // win32-x64 / darwin-arm64 / linux-x64
+  // sharp 拆两个包：sharp-<plat>-<arch>（二进制 loader）+ sharp-libvips-<plat>-<arch>
+  // （libvips 运行时库，mac/linux 必需，Windows 二进制自包含则无此包）。
+  // 两者都必须保留；删除 wasm 与其余平台变体。
+  const platformTag = `${process.platform}-${process.arch}` // win32-x64 / darwin-arm64 / linux-x64
   for (const d of readdirSync(imgDir)) {
-    if (d !== sharpKeep && d !== 'colour') rmSync(join(imgDir, d), { recursive: true, force: true })
+    if (d === 'colour') continue // 纯 JS 依赖
+    if (d === `sharp-${platformTag}`) continue
+    if (d === `sharp-libvips-${platformTag}`) continue
+    rmSync(join(imgDir, d), { recursive: true, force: true })
   }
-  console.log(`[install-runtime] 平台清理完成（保留 ${ptyKeep} / ${sharpKeep}）`)
+  console.log(`[install-runtime] 平台清理完成（pty: ${ptyKeep}；sharp: ${platformTag}）`)
 }
 
 /** dsh 依赖树（npm install 到 resources/dsh，前端 dist 随 @deepseek-ai/dsh-web-frontend 递归带入）。 */
