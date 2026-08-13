@@ -1,0 +1,6 @@
+# 壳注入：设置页「桌面」分区插件（浏览器 half，dsh-desktop-integration）
+# 包由壳在 spawn 前同步到 $DSH_HOME/profiles/node_modules/（扁平回退目录），
+# name 按 profile 目录 node-resolve。
+- insert:
+    - id: dsh-desktop-integration
+      name: 'dsh-desktop-integration'

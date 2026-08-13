@@ -86,6 +86,7 @@ jobs:
             release/*.dmg
             release/*.AppImage
             release/*.deb
+            release/latest*.yml
           if-no-files-found: warn
 
   publish:

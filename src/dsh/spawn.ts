@@ -9,7 +9,9 @@
  */
 
 import { spawn, type ChildProcess } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { waitForHttp } from './ready.js'
+import { desktopPatchPath } from '../paths.js'
 
 /** dsh 官方 readiness 行，如 "dsh web: http://127.0.0.1:50871" */
 const URL_LINE = /dsh web: (http:\/\/127\.0\.0\.1:\d+)/
@@ -36,7 +38,14 @@ export interface DshControl {
 export function startDsh(options: StartDshOptions): DshControl {
   const { nodePath, dshBin, dshHome, onLog, readyTimeoutMs = 60_000 } = options
 
-  const child = spawn(nodePath, [dshBin, 'web', '--port', '0'], {
+  // 桌面集成插件 patch（存在则挂载设置页「桌面」分区）。
+  // 顺序关键：--patch 是 launcher（web 子命令）的 option，必须位于透传参数
+  // （--port 0）之前；放后面会被 commander 归入透传 args 导致 unknown option。
+  const patchArgs: string[] = []
+  const patchFile = desktopPatchPath()
+  if (existsSync(patchFile)) patchArgs.push('--patch', patchFile)
+
+  const child = spawn(nodePath, [dshBin, 'web', ...patchArgs, '--port', '0'], {
     env: { ...process.env, DSH_HOME: dshHome },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
