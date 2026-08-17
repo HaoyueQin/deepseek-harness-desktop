@@ -18,6 +18,7 @@ import { copyFileSync, mkdirSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { desktopPluginDir } from './paths.js'
 import { log } from './log.js'
+import { INJECT_TITLEBAR } from './titlebar.js'
 
 let win: BrowserWindow | null = null
 let dsh: DshControl | null = null
@@ -104,51 +105,9 @@ function ensureDesktopPlugin(dshHome: string): void {
 }
 
 /**
- * 标题栏注入脚本（executeJavaScript 执行于页面主世界，必须是纯 IIFE 字符串，
- * 不能有模块语法）：
- *  - 顶部 44px 透明拖拽条（-webkit-app-region: drag）整条可拖窗口
- *  - 右上角自绘最小化/最大化/关闭：透明背景、hover 品牌蓝 #4176e6、图标随
- *    prefers-color-scheme 明暗、最大化状态自动切换图标
+ * 标题栏注入：见 titlebar.ts（独立 26px 标题栏 + 页面主体下移，不遮挡
+ * dsh 头部任何按钮；明暗主题跟随 dsh token）。
  */
-const INJECT_TITLEBAR = `(() => {
-  if (window.dshDesktop === undefined || /Mac/i.test(navigator.userAgent)) return
-  const HEIGHT = 44
-  const BRAND = '#4176e6'
-  const mk = (svg, title, fn) => {
-    const b = document.createElement('button')
-    b.type = 'button'; b.title = title; b.setAttribute('aria-label', title)
-    b.style.cssText = 'width:46px;height:' + HEIGHT + 'px;border:0;margin:0;padding:0;' +
-      'background:transparent;color:var(--wc,#666);cursor:default;display:flex;' +
-      'align-items:center;justify-content:center;outline:none'
-    b.innerHTML = svg
-    b.addEventListener('click', fn)
-    b.addEventListener('mouseenter', () => { b.style.background = BRAND; b.style.color = '#fff' })
-    b.addEventListener('mouseleave', () => { b.style.background = 'transparent'; b.style.color = 'var(--wc,#666)' })
-    return b
-  }
-  const bar = document.createElement('div')
-  bar.style.cssText = 'position:fixed;top:0;right:0;height:' + HEIGHT + 'px;z-index:2147483647;' +
-    'display:flex;align-items:stretch;-webkit-app-region:no-drag'
-  document.documentElement.appendChild(bar)
-  const dragBar = document.createElement('div')
-  // right:138px 避开按钮区（46*3），避免 drag region 与按钮重叠吞掉 click
-  dragBar.style.cssText = 'position:fixed;top:0;left:0;right:138px;height:' + HEIGHT + 'px;z-index:2147483646;-webkit-app-region:drag'
-  document.documentElement.appendChild(dragBar)
-  const M = '<svg width="10" height="10" viewBox="0 0 10 10"><line x1="0" y1="5" x2="10" y2="5" stroke="currentColor" stroke-width="1"/></svg>'
-  const R = '<svg width="10" height="10" viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1"/></svg>'
-  const T = '<svg width="10" height="10" viewBox="0 0 10 10"><rect x="0.5" y="2.5" width="7" height="7" fill="none" stroke="currentColor" stroke-width="1"/><line x1="2.5" y1="2.5" x2="2.5" y2="0.5" stroke="currentColor" stroke-width="1"/><line x1="2.5" y1="0.5" x2="9.5" y2="0.5" stroke="currentColor" stroke-width="1"/><line x1="9.5" y1="0.5" x2="9.5" y2="7.5" stroke="currentColor" stroke-width="1"/></svg>'
-  const C = '<svg width="10" height="10" viewBox="0 0 10 10"><line x1="0.5" y1="0.5" x2="9.5" y2="9.5" stroke="currentColor" stroke-width="1"/><line x1="9.5" y1="0.5" x2="0.5" y2="9.5" stroke="currentColor" stroke-width="1"/></svg>'
-  const min = mk(M, '最小化', () => window.dshDesktop.minimize())
-  const max = mk(R, '最大化', () => window.dshDesktop.maximizeToggle())
-  const restore = mk(T, '还原', () => window.dshDesktop.maximizeToggle())
-  const close = mk(C, '关闭（隐藏到托盘）', () => window.dshDesktop.close())
-  let maximized = false
-  window.dshDesktop.onMaximized(s => { maximized = s; if (maximized) max.replaceWith(restore); else restore.replaceWith(max) })
-  bar.appendChild(min); bar.appendChild(max); bar.appendChild(close)
-  const mq = matchMedia('(prefers-color-scheme: dark)')
-  const apply = () => bar.style.setProperty('--wc', mq.matches ? '#a0a0a0' : '#666666')
-  apply(); mq.addEventListener('change', apply)
-})()`
 
 function injectTitlebar(): void {
   win?.webContents.on('console-message', (details: Electron.Event<Electron.WebContentsConsoleMessageEventParams>) => {
