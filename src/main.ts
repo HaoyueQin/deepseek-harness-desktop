@@ -13,6 +13,9 @@ import { dshBinScript, dshHomeDir, iconPath, nodeExecutable, preloadPath } from 
 import { getLaunchMinimized, setLaunchMinimized } from './settings.js'
 import { isAutostartEnabled, setAutostart } from './autostart.js'
 import { initUpdater, checkForUpdates as runUpdateCheck, setRunInstaller } from './updater.js'
+// electron-updater 的 update-downloaded 事件带 downloadedFile（本地完整路径），
+// UpdateInfo.path 只是 latest.yml 里的相对文件名，spawn 会 ENOENT。
+import type { UpdateDownloadedEvent } from 'electron-updater'
 import { join } from 'node:path'
 import { copyFileSync, mkdirSync } from 'node:fs'
 import { spawn } from 'node:child_process'
@@ -170,14 +173,20 @@ async function quitApp(): Promise<void> {
 
 // updater 需要「退出后运行安装包」——复用 quitApp 的停止逻辑，quit 后 spawn 安装包
 setRunInstaller(async (info) => {
-  const installerPath = (info as { path?: string }).path
+  // 用 downloadedFile（本地完整路径）而非 path（latest.yml 相对文件名）：
+  // 相对文件名在任意 cwd 下 spawn 都会 ENOENT，安装器永远启动不了。
+  const installerPath = (info as UpdateDownloadedEvent).downloadedFile
   if (installerPath === undefined || installerPath === '') {
     log(`updater: 安装包路径缺失（${info.version}），请手动从 Release 下载`)
     return
   }
   log(`updater: 退出并运行安装包 ${installerPath}`)
   await quitApp()
-  spawn(installerPath, [], { detached: true, stdio: 'ignore' }).unref()
+  try {
+    spawn(installerPath, [], { detached: true, stdio: 'ignore' }).unref()
+  } catch (err) {
+    log(`updater: 启动安装包失败 ${String(err)}`)
+  }
 })
 
 function main(): void {

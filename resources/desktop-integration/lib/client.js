@@ -137,10 +137,40 @@ window.__ModuleLoader__.load({
 		const zh = typeof navigator !== "undefined" && (navigator.language || "").toLowerCase().startsWith("zh")
 
 		// 直接返回插件对象（不引用 module/exports——loader 环境不保证提供）
+		// 设置面板「桌面」分区导航图标：dsh shell（SettingsRoot navIcon）对未知
+		// section id 一律 fallback 齿轮，与「通用设置」重复；settings.section
+		// slot 契约无 icon 字段，插件无法自带图标。这里用 MutationObserver 把
+		// 导航里 label 为「桌面/Desktop」按钮内的齿轮 SVG 替换为显示器 SVG。
+		// data-desktop-icon 标记保证幂等（替换本身会再触发 observer）。
+		const MONITOR_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+			'<rect x="1.5" y="2.5" width="13" height="9" rx="1.5" stroke="currentColor" stroke-width="1.3"/>' +
+			'<path d="M5.5 14h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
+			'<path d="M8 11.5V14" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>'
+
+		function installDesktopNavIcon() {
+			const apply = () => {
+				document.querySelectorAll("nav button").forEach((btn) => {
+					const span = btn.querySelector("span")
+					if (!span) return
+					const text = (span.textContent || "").trim()
+					if (text !== "桌面" && text !== "Desktop") return
+					const svg = btn.querySelector("svg")
+					if (!svg || svg.getAttribute("data-desktop-icon") === "1") return
+					const cls = svg.getAttribute("class")
+					const marker = cls ? `data-desktop-icon="1" class="${cls}"` : 'data-desktop-icon="1"'
+					svg.outerHTML = MONITOR_SVG.replace("<svg", `<svg ${marker}`)
+				})
+			}
+			const mo = new MutationObserver(apply)
+			mo.observe(document.body, { childList: true, subtree: true })
+			apply()
+		}
+
 		return {
 			inject: ["slots", "locale"],
 			apply(ctx) {
 				if (typeof window === "undefined" || window.dshDesktop === undefined) return
+				installDesktopNavIcon()
 				ctx.slots.inject("settings.section", () => ctx.slots.register({
 					name: "settings.section",
 					id: "desktop",
