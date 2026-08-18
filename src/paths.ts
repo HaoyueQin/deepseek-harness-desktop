@@ -5,8 +5,12 @@
  * prod 布局：<resources>/resources/dsh/node_modules/…    + <resources>/resources/runtime/node/node.exe
  *
  * resources/ 由 scripts/install-runtime.mjs 在打包前填充，经 electron-builder
- * extraResources 原样带入安装包。dev 时若 resources/ 尚未生成，回退到项目
- * node_modules（npm run dev 前已 npm install，@deepseek-ai/dsh 在 devDependencies）。
+ * extraResources 原样带入安装包。注意：electron-builder 26 的 createFilter
+ * 硬编码排除顶层 node_modules（util/Filter.js:43），所以 extraResources 必须
+ * 保持双层 resources/resources/dsh，不能平铺。路径缩短依赖 NSIS 自定义
+ * installDir（-20 字符）+ 构建期清理/嵌套去重。
+ * dev 时若 resources/ 尚未生成，回退到项目 node_modules（npm run dev 前已
+ * npm install，@deepseek-ai/dsh 在 devDependencies）。
  */
 
 import { app } from 'electron'

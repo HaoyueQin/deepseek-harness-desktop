@@ -11,7 +11,7 @@
 import { createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { execFileSync, spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = join(fileURLToPath(new URL('..', import.meta.url)))
@@ -105,6 +105,51 @@ function cleanNativePlatforms(dshDir) {
   console.log(`[install-runtime] 平台清理完成（pty: ${ptyKeep}；sharp: ${platformTag}）`)
 }
 
+/**
+ * 构建期冗余清理（幂等，每次 build:runtime 都执行，不依赖 npm install marker）：
+ *   1) 删除运行时不需要的文件：sourcemap、.d.ts、README/CHANGELOG/LICENSE、测试文件
+ *      （约 1.6 万文件 / 90M —— dsh 依赖树 3.3 万文件 → 1.5 万）。
+ *   2) 只删 @mistralai/mistralai/src（exports.source 仅供打包器，Node 运行时走 esm/）。
+ *   3) 只删嵌套的 @opentelemetry/resources（版本冲突导致的 4 份 2.9.0 副本），
+ *      保留顶层 2.10.0 —— Node 解析会从嵌套包向上回退到顶层。
+ * 清理同时消灭所有 >260 字符的超长路径：NSIS 3.0.4.1 卸载器 Rename 不支持长路径，
+ * 超长文件导致升级时旧目录 Rename 失败 → 安装器循环弹"无法关闭"。
+ */
+function trimDshTree(dshDir) {
+  const isNestedOtelResources = (p) =>
+    /node_modules[\\/]@opentelemetry[\\/][^\\/]+[\\/]node_modules[\\/]@opentelemetry[\\/]resources$/.test(p)
+  const isMistralaiSrc = (p) => p.includes(`${sep}@mistralai${sep}mistralai${sep}src`)
+  const shouldRemoveFile = (name) => {
+    const l = name.toLowerCase()
+    return l.endsWith('.map') || l.endsWith('.d.ts')
+      || l.startsWith('readme') || l.startsWith('changelog')
+      || l.startsWith('license') || l.startsWith('licence')
+      || l.includes('.test.') || l.includes('.spec.')
+  }
+  let removed = 0
+  const walk = (dir) => {
+    for (const name of readdirSync(dir)) {
+      const full = join(dir, name)
+      let st
+      try { st = statSync(full) } catch { continue }
+      if (st.isDirectory()) {
+        if (isNestedOtelResources(full)) { rmSync(full, { recursive: true, force: true }); removed++; continue }
+        if (name === 'src' && isMistralaiSrc(full)) { rmSync(full, { recursive: true, force: true }); removed++; continue }
+        walk(full)
+      } else if (st.isFile() && shouldRemoveFile(name)) {
+        rmSync(full, { force: true }); removed++
+      }
+    }
+  }
+  walk(dshDir)
+  // 顶层 @opentelemetry/resources 必须保留（运行时依赖）；误删则中止构建，防止打出坏包
+  const top = join(dshDir, 'node_modules', '@opentelemetry', 'resources')
+  if (!existsSync(join(top, 'package.json'))) {
+    throw new Error('trimDshTree: 顶层 @opentelemetry/resources 缺失，清理中止（请勿手动删除该目录）')
+  }
+  console.log(`[install-runtime] 冗余清理完成：删除 ${removed} 项（map/d.ts/文档/测试/mistralai src/嵌套 otel resources）`)
+}
+
 /** dsh 依赖树（npm install 到 resources/dsh，前端 dist 随 @deepseek-ai/dsh-web-frontend 递归带入）。 */
 async function installDsh() {
   const target = join(resources, 'dsh')
@@ -148,4 +193,6 @@ await installDsh()
 await installIcon()
 // 平台清理（幂等，独立于 npm install marker——已装好的依赖树直接清理，无需重装）
 if (existsSync(join(resources, 'dsh', 'node_modules'))) cleanNativePlatforms(join(resources, 'dsh'))
+// 冗余清理（幂等，独立于 npm install marker）：每次 build:runtime 都会执行
+if (existsSync(join(resources, 'dsh', 'node_modules'))) trimDshTree(join(resources, 'dsh'))
 console.log('[install-runtime] 完成')
