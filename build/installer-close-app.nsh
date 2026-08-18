@@ -26,3 +26,46 @@
     ${endIf}
   ${Loop}
 !macroend
+
+; ---------------------------------------------------------------------------
+; 安装目录缩短：默认安装目录从 "DeepSeek Harness Desktop"（21 字符）改为 "dsh"（3 字符）
+; —— 为路径长度腾出 ~18 字符余量（Windows MAX_PATH 260 限制，配合构建期清理/嵌套
+; 去重，把最深路径从 269 压到 250 以下，让 NSIS 3.0.4.1 卸载器的 Rename 不再失败）。
+;
+; 时机：customInit 在模板 initMultiUser（multiUser.nsh 里设 $INSTDIR 为
+; "$LocalAppData\Programs\${APP_FILENAME}"）之后、目录选择页之前执行。
+; 判断"用户已通过 /D 指定目录"或"已安装"时不改，保持升级/自定义路径兼容。
+!macro customInit
+  ${if} $INSTDIR != ""
+  ${andIf} ${FileExists} "$INSTDIR\${APP_EXECUTABLE_FILENAME}"
+    ; 已安装（升级）：保持原安装目录，不迁移
+  ${else}
+    ReadRegStr $R0 HKCU "${INSTALL_REGISTRY_KEY}" InstallLocation
+    ${if} $R0 == ""
+      StrCpy $INSTDIR "$LocalAppData\Programs\dsh"
+    ${endIf}
+  ${endIf}
+!macroend
+
+; ---------------------------------------------------------------------------
+; 长路径卸载兜底
+;
+; 背景：NSIS 3.0.4.1（electron-builder 26 内置）的删除路径受 MAX_PATH 260
+; 限制——卸载器默认用 un.atomicRMDir 逐文件 Rename，超长路径必然失败导致
+; 更新/卸载卡死。构建期 trimDshTree 已把路径压到 250 字符以内，但将来新依赖
+; 可能再引入超长路径，这里做最后防线：
+; 用 PowerShell Remove-Item（.NET 4.6.2+ 原生支持长路径）删除整个安装目录，
+; 完全绕过 NSIS 的 Rename/RMDir 限制。失败时保留 NSIS 原生 RMDir /r 兜底。
+;
+; 时序：customRemoveFiles 被卸载器 uninstaller.nsh 引用时，完全替代其默认
+; 删除逻辑（isUpdated 分支的 un.atomicRMDir + RMDir /r）——见
+; app-builder-lib/templates/nsis/uninstaller.nsh 第 161 行 !ifmacrodef customRemoveFiles。
+!macro customRemoveFiles
+  DetailPrint "删除安装目录（长路径安全）: $INSTDIR"
+  nsExec::ExecToLog `"$SYSDIR\cmd.exe" /C powershell -NoProfile -ExecutionPolicy Bypass -Command "Remove-Item -LiteralPath '$INSTDIR' -Recurse -Force -ErrorAction SilentlyContinue"`
+  Pop $R0
+  ${if} ${FileExists} "$INSTDIR\${APP_EXECUTABLE_FILENAME}"
+    DetailPrint "长路径删除失败，回退 NSIS 原生删除"
+    RMDir /r $INSTDIR
+  ${endIf}
+!macroend

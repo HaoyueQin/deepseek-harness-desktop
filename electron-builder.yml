@@ -22,7 +22,11 @@ files:
 
 # dsh 依赖树与 Node 运行时不进 asar：
 # dsh 使用 createRequire/worker_threads/动态 import，asar 内文件 spawn 受限。
-# resources/ 布局：dsh/（node_modules + bin.js）、runtime/（Node 发行版）、icon.png
+# resources/ 布局（保持双层）：dsh/（node_modules + bin.js）、runtime/（Node 发行版）、
+# icon.png、desktop-integration/、desktop-patch.yml。
+# 注意：不能把 dsh 平铺到 resources/dsh 顶层——electron-builder 26 的
+# createFilter 硬编码排除顶层 node_modules（util/Filter.js:43），平铺后 dsh 依赖树
+# 会整体丢失。路径缩短靠 NSIS 自定义 installDir（-20 字符）+ 构建期清理/嵌套去重实现。
 extraResources:
   - from: resources
     to: resources
