@@ -22,10 +22,10 @@ function devRoot(): string {
   return fileURLToPath(new URL('../', import.meta.url))
 }
 
-/** dsh 数据目录：隔离在 Electron userData 下，避免污染用户默认 ~/.dsh。 */
-export function dshHomeDir(): string {
-  return join(app.getPath('userData'), 'dsh')
-}
+// dsh 数据目录：尊重 $DSH_HOME、缺省 ~/.dsh（与官方 resolveDshHome 一致），
+// desktop 与 CLI 共享同一份用户数据——终端/界面安装的插件、设置、凭证互相可见。
+// 实现见 dsh-home.ts（纯函数，不依赖 electron，可独立测试）。
+export { dshHomeDir } from './dsh-home.js'
 
 /** extraResources 根目录（prod 为 <resources>/resources）。 */
 export function resourcesDir(): string {

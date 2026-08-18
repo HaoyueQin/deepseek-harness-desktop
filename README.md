@@ -22,7 +22,7 @@ English | [简体中文](README.zh.md)
 - **Always-on tray** — closing the window hides to the system tray instead of quitting; the backend keeps running for instant resume
 - **Auto-start at login** — toggle in the tray menu (Windows/macOS native; Linux via XDG autostart)
 - **Port-conflict proof** — `--port 0` lets the OS pick a free port; the shell discovers the real address from dsh's stdout readiness line
-- **Data isolation** — `DSH_HOME` points to the app's own data directory; your default `~/.dsh` stays untouched
+- **Shared data home** — uses the same `DSH_HOME` as the CLI (default `~/.dsh`, overridable via the environment variable); plugins, settings, credentials and sessions installed in the terminal are directly visible in the desktop app
 - **Single instance** — launching again focuses the existing window
 - **Full plugin freedom** — dynamic plugins (`cordis_define`/`cordis_run`), `$DSH_HOME/cordis.patch.yml`, and the npm plugin ecosystem all work exactly as in the web edition
 - **Desktop settings section** — the app's Settings page gains a "Desktop" tab (styled to match the harness UI): auto-start toggle, launch-minimized toggle, About card (version / data / log dirs), and a check-for-updates button — all in sync with the tray menu
@@ -85,7 +85,7 @@ The CI workflow (`.github/workflows/release.yml`) builds all three platforms on 
 
 ## Data & logs
 
-- **Data** (`DSH_HOME`): `<userData>/dsh` — profiles, sessions, storage
+- **Data** (`DSH_HOME`): defaults to `~/.dsh` (honors the `$DSH_HOME` environment variable) — profiles, sessions, storage
 - **Logs**: `<userData>/logs/main.log`
 - **Runtime** (bundled): `<install>/resources/resources/` — Node (`runtime/node/`) + dsh (`dsh/node_modules/`)
 
