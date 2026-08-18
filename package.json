@@ -14,6 +14,7 @@
     "icons": "node scripts/icons.mjs",
     "build:runtime": "node scripts/install-runtime.mjs",
     "smoke": "node scripts/smoke.mjs",
+    "test:home": "npm run build && node scripts/home-resolution.test.mjs",
     "dist:win": "npm run build && electron-builder --win",
     "dist:mac": "npm run build && electron-builder --mac",
     "dist:linux": "npm run build && electron-builder --linux"

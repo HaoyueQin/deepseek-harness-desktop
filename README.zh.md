@@ -22,7 +22,7 @@
 - **托盘常驻** — 关闭窗口隐藏到系统托盘而非退出，后端持续运行，随时秒开
 - **开机自启** — 托盘菜单一键开关（Windows/macOS 原生实现；Linux 走 XDG autostart）
 - **端口冲突免疫** — `--port 0` 让系统分配空闲端口，壳从 dsh 的 stdout 就绪行读取真实地址
-- **数据隔离** — `DSH_HOME` 指向应用专属数据目录，不污染默认 `~/.dsh`
+- **共享数据目录** — 与 CLI 共用同一份 `DSH_HOME`（默认 `~/.dsh`，可通过环境变量覆盖），终端安装的插件、设置、凭证、会话在桌面端直接可见
 - **单实例** — 重复启动会聚焦已有窗口
 - **插件自由不受限** — 动态插件（`cordis_define`/`cordis_run`）、`$DSH_HOME/cordis.patch.yml`、npm 插件生态均与 Web 版完全一致
 - **设置页桌面分区** — 设置页新增「桌面」标签页（UI 契合 harness 设计）：开机自启开关、启动最小化开关、关于卡片（版本/数据/日志目录）、更新检查按钮，均与托盘菜单双向同步
@@ -85,7 +85,7 @@ CI 工作流（`.github/workflows/release.yml`）在每个 `v*` tag 上构建全
 
 ## 数据与日志
 
-- **数据**（`DSH_HOME`）：`<userData>/dsh` — profile、会话、存储
+- **数据**（`DSH_HOME`）：默认 `~/.dsh`（尊重 `$DSH_HOME` 环境变量）— profile、会话、存储
 - **日志**：`<userData>/logs/main.log`
 - **内置运行时**：`<安装目录>/resources/resources/` — Node（`runtime/node/`）+ dsh（`dsh/node_modules/`）
 
