@@ -18,8 +18,13 @@ let autostartItem: MenuItem | null = null
 
 export function createTray(iconPath: string, handlers: TrayHandlers): Tray {
   let image = nativeImage.createFromPath(iconPath)
-  // Windows 托盘需要小尺寸；mac 会用模板适配，linux 16-22px
-  if (process.platform === 'win32') image = image.resize({ width: 16, height: 16 })
+  // Windows 托盘需要小尺寸；mac 用 template 适配深色菜单栏，linux 16-22px
+  if (process.platform === 'darwin') {
+    image = image.resize({ width: 18, height: 18 })
+    image.setTemplateImage(true)
+  } else if (process.platform === 'win32') {
+    image = image.resize({ width: 16, height: 16 })
+  }
   const tray = new Tray(image)
   tray.setToolTip('DeepSeek Harness Desktop')
 

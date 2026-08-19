@@ -24,6 +24,6 @@ contextBridge.exposeInMainWorld('dshDesktop', {
     ipcRenderer.invoke('dsh-app:get-info'),
   openPath: (p: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('dsh-app:open-path', p),
-  checkForUpdates: (): Promise<{ current: string; latest: string | null; downloading: boolean; downloaded: boolean }> =>
+  checkForUpdates: (): Promise<{ current: string; latest: string | null; downloading: boolean; downloaded: boolean; unsupported?: boolean }> =>
     ipcRenderer.invoke('dsh-update:check'),
 })

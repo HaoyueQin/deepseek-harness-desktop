@@ -105,7 +105,8 @@ export function startDsh(options: StartDshOptions): DshControl {
     expectedStop = true
     if (child.exitCode !== null || child.signalCode !== null) return
     onLog('dsh: 发送停止信号')
-    child.kill() // 默认 SIGTERM；Windows 下为 TerminateProcess，dsh 数据已文件落盘（storage-json），不丢
+    // kill 返回 false = 进程未成功启动（如 spawn error），无子进程可等
+    if (!child.kill()) return
     await new Promise<void>((resolve) => {
       const timer = setTimeout(() => {
         try {

@@ -38,7 +38,7 @@ Download the installer for your platform from the [Releases](https://github.com/
 
 | Platform | Package | Notes |
 | --- | --- | --- |
-| Windows | `DeepSeek Harness Desktop Setup <ver>.exe` | NSIS installer, x64 |
+| Windows | `deepseek-harness-desktop-<ver>-setup.exe` | NSIS installer, x64 |
 | macOS | `.dmg` (Apple Silicon / Intel) | unsigned — first run: right-click → Open |
 | Linux | `.AppImage` + `.deb` | x64 |
 
