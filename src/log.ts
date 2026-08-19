@@ -3,8 +3,11 @@
  */
 
 import { app } from 'electron'
-import { appendFileSync, mkdirSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+
+/** main.log 单文件上限：超限把当前文件轮转为 main.log.1（保留最近一份）。 */
+const MAX_LOG_BYTES = 5 * 1024 * 1024
 
 export function log(message: string): void {
   const line = `[${new Date().toISOString()}] ${message}\n`
@@ -15,7 +18,16 @@ export function log(message: string): void {
   try {
     const dir = join(app.getPath('userData'), 'logs')
     mkdirSync(dir, { recursive: true })
-    appendFileSync(join(dir, 'main.log'), line)
+    const file = join(dir, 'main.log')
+    // 托盘常驻长期运行，防止 main.log 无限增长（轮转失败继续写当前文件）
+    if (existsSync(file) && statSync(file).size > MAX_LOG_BYTES) {
+      try {
+        renameSync(file, `${file}.1`)
+      } catch {
+        /* 轮转失败不阻断 */
+      }
+    }
+    appendFileSync(file, line)
   } catch {
     /* 日志失败不阻断主流程 */
   }

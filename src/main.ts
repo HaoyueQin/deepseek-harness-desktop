@@ -124,7 +124,8 @@ function ensureDesktopPlugin(dshHome: string): void {
 
 function injectTitlebar(): void {
   win?.webContents.on('console-message', (details: Electron.Event<Electron.WebContentsConsoleMessageEventParams>) => {
-    log(`[page:${details.level}] ${details.message}`)
+    // 只记录 error：页面 console 可能包含请求内容/API 密钥，全量落盘是敏感数据风险
+    if (details.level === 'error') log(`[page:${details.level}] ${details.message}`)
   })
   win?.webContents.on('dom-ready', () => {
     win?.webContents.executeJavaScript(INJECT_TITLEBAR)
@@ -202,9 +203,49 @@ setRunInstaller(async (info) => {
 function main(): void {
   app.on('second-instance', () => showWindow())
 
+  // Windows 任务栏/通知归属：缺省会退化到 electron.exe 图标分组（AppUserModelId
+  // 须与 electron-builder 的 appId 一致，非 win32 为 no-op）
+  if (process.platform === 'win32') {
+    app.setAppUserModelId('io.github.haoyueqin.deepseek-harness-desktop')
+  }
+
+  // 全局限流（覆盖未来新建的任何 webContents）：
+  //  - window.open 一律 deny（单一主窗模型），外部 http(s) 交给系统浏览器
+  //  - 导航只允许留在当前 origin（dsh 页面路由），其余 http(s) 走系统浏览器
+  app.on('web-contents-created', (_event, contents) => {
+    contents.setWindowOpenHandler(({ url }) => {
+      try {
+        const proto = new URL(url).protocol
+        if (proto === 'http:' || proto === 'https:') void shell.openExternal(url)
+      } catch {
+        /* 非 URL，忽略 */
+      }
+      return { action: 'deny' }
+    })
+    contents.on('will-navigate', (event, url) => {
+      try {
+        const current = new URL(contents.getURL())
+        if (new URL(url).origin === current.origin) return // 同源路由放行
+      } catch {
+        /* 解析失败按外部导航处理 */
+      }
+      event.preventDefault()
+      if (url.startsWith('http://') || url.startsWith('https://')) void shell.openExternal(url)
+    })
+  })
+
   void app.whenReady().then(async () => {
-    // 去掉 File/Edit/View/Window 菜单栏（mac 上连同编辑快捷键一起移除，V1 可接受）
-    Menu.setApplicationMenu(null)
+    // 菜单栏：win/linux 移除；mac 保留最小菜单（File/Edit 全移除会连标准
+    // 编辑快捷键 Cmd+C/V/X/A 一起失效）
+    if (process.platform === 'darwin') {
+      Menu.setApplicationMenu(Menu.buildFromTemplate([
+        { role: 'appMenu' },
+        { role: 'editMenu' },
+        { role: 'windowMenu' },
+      ]))
+    } else {
+      Menu.setApplicationMenu(null)
+    }
     registerWindowControls()
     registerAppIpc()
     const trayHandlers: TrayHandlers = { show: showWindow, quit: () => void quitApp() }
@@ -245,6 +286,9 @@ function main(): void {
     } catch (err) {
       log(`dsh 启动失败: ${String(err)}`)
       if (!quitting) {
+        // 失败时 dsh 可能已监听端口（仅 HTTP 探测失败），先停掉再退出，
+        // 防止 dsh 变孤儿进程常驻后台、占用 DSH_HOME 文件锁
+        if (dsh !== null) await dsh.stop()
         await dialog.showErrorBox('DeepSeek Harness 启动失败', String(err))
         app.quit()
       }

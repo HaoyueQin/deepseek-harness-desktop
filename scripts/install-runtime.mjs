@@ -19,6 +19,11 @@ const resources = join(root, 'resources')
 const DSH_VERSION = process.env.DSH_VERSION ?? '0.1.0-rc.6'
 // npm install 走调用方 registry（本机镜像配置或 CI 默认），不写死
 const REGISTRY = process.env.npm_config_registry ?? 'https://registry.npmjs.org'
+// 目标平台架构：交叉构建时（CI 在 arm64 runner 上出 x64 包）npm 会注入
+// npm_config_arch；原生构建时未设，回退 process.arch。Node 发行版、node-pty
+// prebuilds 与 sharp 平台包都必须按目标架构选择——用 process.arch 会在交叉
+// 构建时下载错 Node 发行版、删掉产物需要的原生运行时。
+const targetArch = process.env.npm_config_arch ?? process.arch
 
 /**
  * 检查外部工具是否可用。脚本依赖 curl/tar/powershell（Windows 自带 / *
@@ -53,12 +58,9 @@ async function latestNode24() {
 
 function nodeDownloadInfo(version) {
   const base = `https://nodejs.org/dist/${version}`
-  if (process.platform === 'win32') return { url: `${base}/node-${version}-win-x64.zip`, kind: 'zip' }
-  if (process.platform === 'darwin') {
-    const a = process.arch === 'arm64' ? 'arm64' : 'x64'
-    return { url: `${base}/node-${version}-darwin-${a}.tar.gz`, kind: 'tgz' }
-  }
-  return { url: `${base}/node-${version}-linux-x64.tar.gz`, kind: 'tgz' }
+  if (process.platform === 'win32') return { url: `${base}/node-${version}-win-${targetArch}.zip`, kind: 'zip' }
+  if (process.platform === 'darwin') return { url: `${base}/node-${version}-darwin-${targetArch}.tar.gz`, kind: 'tgz' }
+  return { url: `${base}/node-${version}-linux-${targetArch}.tar.gz`, kind: 'tgz' }
 }
 
 async function download(url, dest) {
@@ -115,7 +117,7 @@ async function installNode() {
 /** 平台清理：保留当前平台的 node-pty prebuild 与 sharp 二进制及其 libvips 运行时，删除其余（省 ~48M）。 */
 function cleanNativePlatforms(dshDir) {
   const ptyDir = join(dshDir, 'node_modules', 'node-pty', 'prebuilds')
-  const ptyKeep = { win32: `win32-${process.arch}`, darwin: `darwin-${process.arch}`, linux: `linux-${process.arch}` }[process.platform]
+  const ptyKeep = { win32: `win32-${targetArch}`, darwin: `darwin-${targetArch}`, linux: `linux-${targetArch}` }[process.platform]
   for (const d of readdirSync(ptyDir)) {
     if (d !== ptyKeep) rmSync(join(ptyDir, d), { recursive: true, force: true })
   }
@@ -123,7 +125,7 @@ function cleanNativePlatforms(dshDir) {
   // sharp 拆两个包：sharp-<plat>-<arch>（二进制 loader）+ sharp-libvips-<plat>-<arch>
   // （libvips 运行时库，mac/linux 必需，Windows 二进制自包含则无此包）。
   // 两者都必须保留；删除 wasm 与其余平台变体。
-  const platformTag = `${process.platform}-${process.arch}` // win32-x64 / darwin-arm64 / linux-x64
+  const platformTag = `${process.platform}-${targetArch}` // win32-x64 / darwin-arm64 / linux-x64
   for (const d of readdirSync(imgDir)) {
     if (d === 'colour') continue // 纯 JS 依赖
     if (d === `sharp-${platformTag}`) continue

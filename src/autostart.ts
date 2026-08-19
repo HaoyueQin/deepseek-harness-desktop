@@ -21,7 +21,9 @@ function linuxDesktopContent(): string {
     '[Desktop Entry]',
     'Type=Application',
     'Name=DeepSeek Harness Desktop',
+    // 引号包裹：Exec 首个字段（可执行文件路径）含空格时，须整体加引号
     `Exec="${process.execPath}"`,
+    'Terminal=false',
     'X-GNOME-Autostart-enabled=true',
     '',
   ].join('\n')

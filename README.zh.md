@@ -38,7 +38,7 @@
 
 | 平台 | 安装包 | 说明 |
 | --- | --- | --- |
-| Windows | `DeepSeek Harness Desktop Setup <ver>.exe` | NSIS 安装包，x64 |
+| Windows | `deepseek-harness-desktop-<ver>-setup.exe` | NSIS 安装包，x64 |
 | macOS | `.dmg`（Apple Silicon / Intel） | 未签名 — 首次运行需右键 → 打开 |
 | Linux | `.AppImage` + `.deb` | x64 |
 

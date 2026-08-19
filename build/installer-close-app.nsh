@@ -62,7 +62,26 @@
 ; app-builder-lib/templates/nsis/uninstaller.nsh 第 161 行 !ifmacrodef customRemoveFiles。
 !macro customRemoveFiles
   DetailPrint "删除安装目录（长路径安全）: $INSTDIR"
-  nsExec::ExecToLog `"$SYSDIR\cmd.exe" /C powershell -NoProfile -ExecutionPolicy Bypass -Command "Remove-Item -LiteralPath '$INSTDIR' -Recurse -Force -ErrorAction SilentlyContinue"`
+  ; $INSTDIR 可能含单引号（用户自定义路径），PowerShell 单引号字符串内
+  ; 用两个单引号转义。纯 NSIS 指令遍历替换（不依赖 TextFunc/LogicLib——
+  ; 卸载器链未 include 这些库），结果存入 $R1。
+  StrCpy $R1 ""
+  StrCpy $R4 "$INSTDIR"
+  StrLen $R5 $R4
+  StrCpy $R8 0
+  dsh_rm_loop:
+    IntCmp $R8 $R5 dsh_rm_done
+    StrCpy $R7 $R4 1 $R8
+    StrCmp $R7 "'" dsh_rm_quote
+    StrCpy $R1 "$R1$R7"
+    IntOp $R8 $R8 + 1
+    Goto dsh_rm_loop
+  dsh_rm_quote:
+    StrCpy $R1 "$R1''"
+    IntOp $R8 $R8 + 1
+    Goto dsh_rm_loop
+  dsh_rm_done:
+  nsExec::ExecToLog `"$SYSDIR\cmd.exe" /C powershell -NoProfile -ExecutionPolicy Bypass -Command "Remove-Item -LiteralPath '$R1' -Recurse -Force -ErrorAction SilentlyContinue"`
   Pop $R0
   ${if} ${FileExists} "$INSTDIR\${APP_EXECUTABLE_FILENAME}"
     DetailPrint "长路径删除失败，回退 NSIS 原生删除"

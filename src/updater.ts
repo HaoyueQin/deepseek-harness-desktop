@@ -6,7 +6,7 @@
  * 弹窗引导用户运行安装包；Linux AppImage 无需签名，直接替换。
  */
 
-import { app, dialog } from 'electron'
+import { app, BrowserWindow, dialog } from 'electron'
 // autoUpdater 是 CJS getter 导出，ESM named import 无法静态识别——default 导入后解构
 import electronUpdater from 'electron-updater'
 import type { UpdateInfo } from 'electron-updater'
@@ -19,6 +19,8 @@ export interface UpdateStatus {
   latest: string | null
   downloading: boolean
   downloaded: boolean
+  /** macOS 不支持自动更新（需签名）：与「无更新」区分，避免 UI 误导为最新版。 */
+  unsupported?: boolean
 }
 
 let current: UpdateStatus = { current: app.getVersion(), latest: null, downloading: false, downloaded: false }
@@ -45,7 +47,10 @@ async function promptRunInstaller(info: UpdateInfo): Promise<void> {
     log('updater: 无安装包运行实现，跳过')
     return
   }
-  const { response } = await dialog.showMessageBox({
+  // 绑定焦点窗口：窗口可能处于隐藏（托盘）状态，无父窗口的弹窗在部分
+  // Windows 版本上不置顶，用户可能一直看不到
+  const parent = BrowserWindow.getFocusedWindow() ?? undefined
+  const opts: Electron.MessageBoxOptions = {
     type: 'info',
     title: '发现新版本',
     message: `DeepSeek Harness Desktop v${info.version} 已就绪。`,
@@ -53,7 +58,10 @@ async function promptRunInstaller(info: UpdateInfo): Promise<void> {
     buttons: ['稍后', '现在更新'],
     defaultId: 1,
     cancelId: 0,
-  })
+  }
+  const { response } = parent === undefined
+    ? await dialog.showMessageBox(opts)
+    : await dialog.showMessageBox(parent, opts)
   if (response !== 1) return
   await runInstaller(info)
 }
@@ -61,6 +69,11 @@ async function promptRunInstaller(info: UpdateInfo): Promise<void> {
 export function initUpdater(): void {
   if (process.platform !== 'win32' && process.platform !== 'linux') return
   autoUpdater.autoDownload = true
+  // 关闭退出时自动安装：electron-updater 默认 autoInstallOnAppQuit=true，
+  // 下载完成后用户点「稍后」，任何一次退出都会触发静默 /S 安装，与 Windows
+  // 引导模式（promptRunInstaller 显式确认）语义矛盾。Linux 全自动走显式
+  // quitAndInstall()，不受影响。
+  autoUpdater.autoInstallOnAppQuit = false
   autoUpdater.on('checking-for-update', () => {
     current.downloading = false
     current.downloaded = false
@@ -99,7 +112,11 @@ export function initUpdater(): void {
 }
 
 export async function checkForUpdates(): Promise<UpdateStatus> {
-  if (process.platform !== 'win32' && process.platform !== 'linux') return current
+  if (process.platform !== 'win32' && process.platform !== 'linux') {
+    // macOS 无签名证书不支持自动更新：显式标记 unsupported，
+    // 与「无更新」区分，UI 显示提示而非误导为最新版
+    return { ...current, unsupported: true }
+  }
   // 已在后台下载完成的更新：手动再查直接返回现状，避免重复下载同一安装包
   // （Windows 引导模式下点击"现在更新"才真正运行安装器）。
   if (current.downloaded) return { ...current }
