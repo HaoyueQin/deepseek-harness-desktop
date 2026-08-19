@@ -14,8 +14,17 @@ assert.equal(resolveDshHomeDir({}), join(homedir(), '.dsh'), '未设 DSH_HOME �
 // 显式设置 → 原样（规范化）
 assert.equal(resolveDshHomeDir({ [DSH_HOME_ENV]: 'D:/custom/dsh' }), resolve('D:/custom/dsh'))
 
-// ~ 前缀展开
+// ~ 前缀展开（正斜杠）
 assert.equal(resolveDshHomeDir({ [DSH_HOME_ENV]: '~/dsh-test' }), join(homedir(), 'dsh-test'))
+
+// ~ 前缀展开（反斜杠，Windows 风格）
+assert.equal(resolveDshHomeDir({ [DSH_HOME_ENV]: '~\\dsh-win' }), join(homedir(), 'dsh-win'))
+
+// 纯 "~" → home
+assert.equal(resolveDshHomeDir({ [DSH_HOME_ENV]: '~' }), homedir())
+
+// 相对路径按 process.cwd() 解析（对齐官方 resolve 语义）
+assert.equal(resolveDshHomeDir({ [DSH_HOME_ENV]: 'dsh-relative' }), resolve('dsh-relative'))
 
 // 空白视为未设
 assert.equal(resolveDshHomeDir({ [DSH_HOME_ENV]: '   ' }), join(homedir(), '.dsh'))

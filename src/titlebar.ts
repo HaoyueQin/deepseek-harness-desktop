@@ -36,7 +36,10 @@ export const INJECT_TITLEBAR = `(() => {
   }
   const bar = document.createElement('div')
   // 整条可拖（含空白区）；按钮自身 no-drag 优先于父级 drag
-  bar.style.cssText = 'position:fixed;top:0;left:0;right:0;height:' + HEIGHT + 'px;z-index:2147483647;' +
+  // z-index 用 9999（远高于内容层，但不取 MAX_VALUE）：页面主体已靠
+  // body padding-top 下移 26px，标题栏与内容区不重叠；固定条只需悬于
+  // 常规内容之上，MAX 值会不必要地压住 dsh 任何真实弹层/Toast。
+  bar.style.cssText = 'position:fixed;top:0;left:0;right:0;height:' + HEIGHT + 'px;z-index:9999;' +
     'display:flex;align-items:stretch;justify-content:flex-end;-webkit-app-region:drag'
   const M = '<svg width="10" height="10" viewBox="0 0 10 10"><line x1="0" y1="5" x2="10" y2="5" stroke="currentColor" stroke-width="1"/></svg>'
   const R = '<svg width="10" height="10" viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1"/></svg>'

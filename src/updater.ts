@@ -100,6 +100,9 @@ export function initUpdater(): void {
 
 export async function checkForUpdates(): Promise<UpdateStatus> {
   if (process.platform !== 'win32' && process.platform !== 'linux') return current
+  // 已在后台下载完成的更新：手动再查直接返回现状，避免重复下载同一安装包
+  // （Windows 引导模式下点击"现在更新"才真正运行安装器）。
+  if (current.downloaded) return { ...current }
   try {
     await autoUpdater.checkForUpdates()
   } catch (err) {
