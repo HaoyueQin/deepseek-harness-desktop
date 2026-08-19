@@ -25,7 +25,8 @@ const dshBin = useRuntime
   : join(root, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
 
 const dshHome = mkdtempSync(join(tmpdir(), 'dsh-smoke-'))
-const URL_LINE = /dsh web: (http:\/\/127\.0\.0\.1:\d+)/
+// URL 行独占一行以 \n 收尾；锚定换行避免端口前几位时提前命中残缺地址
+const URL_LINE = /dsh web: (http:\/\/127\.0\.0\.1:\d+)\r?\n/
 
 const child = spawn(nodePath, [dshBin, 'web', '--port', '0'], {
   env: { ...process.env, DSH_HOME: dshHome },
@@ -41,10 +42,14 @@ const timeout = setTimeout(() => {
   process.exit(1)
 }, 90_000)
 
+// 累积缓冲 + 单段正则：URL 行可能被拆成多个 chunk，逐段匹配会漏。
+let buf = ''
 child.stdout.on('data', (chunk) => {
   const text = chunk.toString()
   log += text
-  const m = text.match(URL_LINE)
+  buf += text
+  if (buf.length > 8192) buf = buf.slice(-8192)
+  const m = buf.match(URL_LINE)
   if (m && !url) url = m[1]
 })
 child.stderr.on('data', (chunk) => { log += chunk.toString() })

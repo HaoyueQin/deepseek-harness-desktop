@@ -11,10 +11,8 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { waitForHttp } from './ready.js'
+import { UrlLineMatcher } from './url-line.js'
 import { desktopPatchPath } from '../paths.js'
-
-/** dsh 官方 readiness 行，如 "dsh web: http://127.0.0.1:50871" */
-const URL_LINE = /dsh web: (http:\/\/127\.0\.0\.1:\d+)/
 
 export interface StartDshOptions {
   nodePath: string
@@ -59,14 +57,16 @@ export function startDsh(options: StartDshOptions): DshControl {
     urlReject = reject
   })
   let settled = false
+  const urlLine = new UrlLineMatcher()
+  let urlFound = false // 已命中一次 URL 行后忽略后续 chunk，避免重复发起 HTTP 探测
 
   const onStdout = (chunk: Buffer): void => {
     const text = chunk.toString()
     onLog(text.trimEnd())
-    if (settled) return
-    const match = text.match(URL_LINE)
-    if (match === null) return
-    const found = match[1]
+    if (settled || urlFound) return
+    const found = urlLine.push(text)
+    if (found === null) return
+    urlFound = true
     // 双保险：URL 行出现后仍须 HTTP 2xx（dist 挂载完成）才视为就绪
     waitForHttp(found, 30_000).then(
       () => {

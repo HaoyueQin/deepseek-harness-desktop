@@ -9,7 +9,7 @@
  */
 
 import { createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { execFileSync, spawn } from 'node:child_process'
+import { execFileSync, spawnSync, spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -20,8 +20,27 @@ const DSH_VERSION = process.env.DSH_VERSION ?? '0.1.0-rc.6'
 // npm install 走调用方 registry（本机镜像配置或 CI 默认），不写死
 const REGISTRY = process.env.npm_config_registry ?? 'https://registry.npmjs.org'
 
+/**
+ * 检查外部工具是否可用。脚本依赖 curl/tar/powershell（Windows 自带 / *
+ * macOS、Linux 现多自带），但 PATH 自定义或精简系统可能缺失——缺失时给出
+ * 明确指导，避免裸 ENOENT 难以定位。
+ * @returns 可用返回 true；不可用打印提示后返回 false（调用方可决定是否中止）。
+ */
+function ensureTool(tool, hint) {
+  try {
+    spawnSync(tool, ['--version'], { stdio: 'ignore', windowsHide: true })
+    return true
+  } catch {
+    console.error(`[install-runtime] 缺少外部工具 "${tool}"：${hint}`)
+    return false
+  }
+}
+
 /** 取 Node 24 LTS 当前最新 patch 版本（nodejs.org dist/index.json）。 */
 async function latestNode24() {
+  if (!ensureTool('curl', '下载 Node 发行版与版本清单需要 curl。请安装 curl 或将其加入 PATH。')) {
+    throw new Error('缺少 curl，无法获取 Node 版本清单')
+  }
   const proxy = process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY
   const args = ['-s', 'https://nodejs.org/dist/index.json']
   if (proxy) args.push('--proxy', proxy)
@@ -43,6 +62,9 @@ function nodeDownloadInfo(version) {
 }
 
 async function download(url, dest) {
+  if (!ensureTool('curl', '下载大文件需要 curl。请安装 curl 或将其加入 PATH。')) {
+    throw new Error(`缺少 curl，无法下载 ${url}`)
+  }
   console.log(`[install-runtime] 下载 ${url}`)
   const args = ['-sL', '-o', dest, '--max-time', '600', '--retry', '3']
   // 环境变量设置了 HTTP(S)_PROXY 时走代理（Node 24 的 --use-env-proxy 可让
@@ -68,6 +90,9 @@ async function installNode() {
   mkdirSync(target, { recursive: true })
   if (info.kind === 'zip') {
     // Windows 无 unzip 保证，用 PowerShell Expand-Archive
+    if (!ensureTool('powershell', 'Windows 下解压 Node zip 需要 PowerShell。')) {
+      throw new Error('缺少 powershell，无法解压 Node')
+    }
     const staging = join(resources, 'runtime', 'node-tmp')
     rmSync(staging, { recursive: true, force: true })
     execFileSync('powershell', ['-NoProfile', '-Command',
@@ -77,6 +102,9 @@ async function installNode() {
     renameSync(join(inner, 'LICENSE'), join(target, 'LICENSE'))
     rmSync(staging, { recursive: true, force: true })
   } else {
+    if (!ensureTool('tar', 'macOS/Linux 下解压 Node tar.gz 需要 tar。')) {
+      throw new Error('缺少 tar，无法解压 Node')
+    }
     execFileSync('tar', ['-xzf', archive, '-C', target, '--strip-components=1'], { stdio: 'inherit' })
   }
   rmSync(archive, { force: true })

@@ -47,12 +47,22 @@ function registerWindowControls(): void {
 // 桌面集成 IPC（设置页「桌面」分区插件经 preload 桥调用）
 function registerAppIpc(): void {
   ipcMain.handle('dsh-app:get-autostart', () => isAutostartEnabled())
-  ipcMain.handle('dsh-app:set-autostart', (_event, enabled: boolean) => {
+  ipcMain.handle('dsh-app:set-autostart', (_event, enabled: unknown) => {
+    if (typeof enabled !== 'boolean') {
+      log(`ipc: dsh-app:set-autostart 收到非法参数 ${typeof enabled}`)
+      return
+    }
     setAutostart(enabled)
     syncTrayAutostart() // 托盘菜单勾选同步（设置页↔托盘双向一致）
   })
   ipcMain.handle('dsh-settings:get-launch-minimized', () => getLaunchMinimized())
-  ipcMain.handle('dsh-settings:set-launch-minimized', (_event, enabled: boolean) => setLaunchMinimized(enabled))
+  ipcMain.handle('dsh-settings:set-launch-minimized', (_event, enabled: unknown) => {
+    if (typeof enabled !== 'boolean') {
+      log(`ipc: dsh-settings:set-launch-minimized 收到非法参数 ${typeof enabled}`)
+      return
+    }
+    setLaunchMinimized(enabled)
+  })
   ipcMain.handle('dsh-app:get-info', () => ({
     appVersion: app.getVersion(),
     dshHome: dshHomeDir(),
