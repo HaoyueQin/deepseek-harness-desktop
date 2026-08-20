@@ -13,6 +13,10 @@ import { dshBinScript, dshHomeDir, iconPath, nodeExecutable, preloadPath, resour
 import { getLaunchMinimized, setLaunchMinimized } from './settings.js'
 import { isAutostartEnabled, setAutostart } from './autostart.js'
 import { initUpdater, checkForUpdates as runUpdateCheck, setRunInstaller } from './updater.js'
+import {
+  checkBackendUpdate, initBackendUpdater, isDevBackend,
+  onBackendUpdateStatus, setBackendRestartHandler, updateBackend,
+} from './dsh-updater.js'
 // electron-updater 的 update-downloaded 事件带 downloadedFile（本地完整路径），
 // UpdateInfo.path 只是 latest.yml 里的相对文件名，spawn 会 ENOENT。
 import type { UpdateDownloadedEvent } from 'electron-updater'
@@ -91,6 +95,9 @@ function registerAppIpc(): void {
   })
   // checkForUpdates 接 electron-updater 真实实现（win/linux；mac 返回 current）
   ipcMain.handle('dsh-update:check', () => runUpdateCheck())
+  // 后端（内置 dsh 运行时）版本检测与一键更新
+  ipcMain.handle('dsh-backend:check', () => checkBackendUpdate())
+  ipcMain.handle('dsh-backend:update', () => updateBackend())
 }
 
 const LOADING_HTML = `<!doctype html>
@@ -110,6 +117,37 @@ function showWindow(): void {
   if (win.isMinimized()) win.restore()
   win.show()
   win.focus()
+}
+
+/**
+ * spawn dsh 后端并等待就绪后加载到窗口。供启动与后端一键更新后的重启共用。
+ * 调用方负责 try/catch（失败时停掉 dsh 防孤儿进程）。
+ */
+async function startDshAndLoad(): Promise<void> {
+  log(`spawn dsh: node=${nodeExecutable()} bin=${dshBinScript()} DSH_HOME=${dshHomeDir()}`)
+  ensureDesktopPlugin(dshHomeDir())
+  dsh = startDsh({
+    nodePath: nodeExecutable(),
+    dshBin: dshBinScript(),
+    dshHome: dshHomeDir(),
+    onLog: log,
+  })
+
+  dsh.exited.then(({ expected, code, signal }) => {
+    log(`dsh 进程退出: expected=${expected} code=${String(code)} signal=${String(signal)}`)
+    if (!expected && !quitting) {
+      void dialog.showMessageBox({
+        type: 'error',
+        title: 'DeepSeek Harness 意外退出',
+        message: `后端进程意外退出（code=${String(code)}）。`,
+        buttons: ['退出'],
+      }).then(() => app.quit())
+    }
+  })
+
+  const url = await dsh.url
+  log(`dsh 就绪: ${url}`)
+  if (!quitting) await win?.loadURL(url)
 }
 
 /**
@@ -272,31 +310,19 @@ function main(): void {
     await win?.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(LOADING_HTML)}`)
     if (quitting) return
 
-    log(`spawn dsh: node=${nodeExecutable()} bin=${dshBinScript()} DSH_HOME=${dshHomeDir()}`)
-    ensureDesktopPlugin(dshHomeDir())
-    dsh = startDsh({
-      nodePath: nodeExecutable(),
-      dshBin: dshBinScript(),
-      dshHome: dshHomeDir(),
-      onLog: log,
-    })
-
-    dsh.exited.then(({ expected, code, signal }) => {
-      log(`dsh 进程退出: expected=${expected} code=${String(code)} signal=${String(signal)}`)
-      if (!expected && !quitting) {
-        void dialog.showMessageBox({
-          type: 'error',
-          title: 'DeepSeek Harness 意外退出',
-          message: `后端进程意外退出（code=${String(code)}）。`,
-          buttons: ['退出'],
-        }).then(() => app.quit())
+    initBackendUpdater()
+    onBackendUpdateStatus((s) => { win?.webContents.send('dsh-backend:update-status', s) })
+    setBackendRestartHandler(async () => {
+      // 停旧 dsh → 重启 → 窗口重载
+      if (dsh !== null) { await dsh.stop(); dsh = null }
+      if (!quitting) {
+        win?.webContents.send('dsh-backend:update-status', { stage: 'restarting', message: '正在重启后端…' })
+        await startDshAndLoad()
       }
     })
 
     try {
-      const url = await dsh.url
-      log(`dsh 就绪: ${url}`)
-      if (!quitting) await win?.loadURL(url)
+      await startDshAndLoad()
     } catch (err) {
       log(`dsh 启动失败: ${String(err)}`)
       if (!quitting) {
