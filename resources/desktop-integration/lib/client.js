@@ -104,7 +104,7 @@ window.__ModuleLoader__.load({
 					React.createElement("div", {},
 						React.createElement("div", { style: labelStyle }, "关于"),
 						React.createElement("div", { style: subStyle },
-							`版本 ${info ? info.appVersion : "…"} · 数据 ${info ? info.dshHome : "…"}`,
+							`桌面 ${info ? info.appVersion : "…"} · dsh ${info ? info.dshVersion : "…"} · 数据 ${info ? info.dshHome : "…"}`,
 						),
 						React.createElement("div", { style: { display: "flex", gap: "8px", marginTop: "8px" } },
 							React.createElement("button", {

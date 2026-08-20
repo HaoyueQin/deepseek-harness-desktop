@@ -43,7 +43,10 @@ export function startDsh(options: StartDshOptions): DshControl {
   const patchFile = desktopPatchPath()
   if (existsSync(patchFile)) patchArgs.push('--patch', patchFile)
 
-  const child = spawn(nodePath, [dshBin, 'web', ...patchArgs, '--port', '0'], {
+  // --no-open（dsh 0.1.0-rc.8+ 的 web 透传 flag）：dsh web 默认会用系统
+  // 浏览器打开就绪地址，桌面端自带窗口，必须关掉，否则每次启动都多弹
+  // 一个浏览器标签。放透传区（--port 0 之后），不影响 stdout URL 就绪行。
+  const child = spawn(nodePath, [dshBin, 'web', ...patchArgs, '--port', '0', '--no-open'], {
     env: { ...process.env, DSH_HOME: dshHome },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,

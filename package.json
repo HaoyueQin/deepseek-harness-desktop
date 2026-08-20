@@ -20,7 +20,7 @@
     "dist:linux": "npm run build && electron-builder --linux"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh": "0.1.0-rc.6",
+    "@deepseek-ai/dsh": "^0.1.0-rc.8",
     "@types/node": "^24.0.0",
     "electron": "43.4.0",
     "electron-builder": "26.15.3",

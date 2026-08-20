@@ -8,7 +8,7 @@
  * 目标平台（或对应 CI runner）上执行，保证下载的 Node/dsh 与产物平台一致。
  */
 
-import { createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { execFileSync, spawnSync, spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
@@ -16,7 +16,16 @@ import { fileURLToPath } from 'node:url'
 
 const root = join(fileURLToPath(new URL('..', import.meta.url)))
 const resources = join(root, 'resources')
-const DSH_VERSION = process.env.DSH_VERSION ?? '0.1.0-rc.6'
+// dsh 版本范围不写死：跟随根 package.json devDependencies 里的
+// @deepseek-ai/dsh 声明（当前为 ^0.1.0-rc.8，自动取范围内最新 rc / 正式版）。
+// 上游发新版后无需改本脚本——重跑 build:runtime 即装到当时最新；
+// 若版本跳到不同 major.minor 需手动更新 package.json（大版本人工审查破坏性变更）。
+// DSH_VERSION 环境变量可临时覆盖（CI 固定版本）。
+const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+const DSH_VERSION = process.env.DSH_VERSION ?? pkg.devDependencies?.['@deepseek-ai/dsh']
+if (typeof DSH_VERSION !== 'string' || DSH_VERSION === '') {
+  throw new Error('package.json devDependencies 中缺少 @deepseek-ai/dsh 版本声明')
+}
 // npm install 走调用方 registry（本机镜像配置或 CI 默认），不写死
 const REGISTRY = process.env.npm_config_registry ?? 'https://registry.npmjs.org'
 // 目标平台架构：交叉构建时（CI 在 arm64 runner 上出 x64 包）npm 会注入
@@ -185,7 +194,9 @@ async function installDsh() {
   const target = join(resources, 'dsh')
   const marker = join(target, '.dsh-installed')
   if (existsSync(marker)) {
-    console.log(`[install-runtime] dsh 已存在，跳过（删除 ${marker} 可强制重装）`)
+    let installed = '未知'
+    try { installed = JSON.parse(readFileSync(marker, 'utf8')).version ?? installed } catch { /* 旧版 marker 为纯日期 */ }
+    console.log(`[install-runtime] dsh 已存在（version=${installed}），跳过（删除 ${marker} 可强制按 ${DSH_VERSION} 重装）`)
     return
   }
   rmSync(target, { recursive: true, force: true })
@@ -199,8 +210,13 @@ async function installDsh() {
     })
     child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`npm install 退出码 ${String(code)}`))))
   })
-  writeFileSync(marker, new Date().toISOString())
-  console.log(`[install-runtime] dsh 依赖树就绪 → ${target}`)
+  // 记录实际解析到的版本：marker（跳过提示用）+ .dsh-version（运行时「关于」显示用）
+  const resolved = JSON.parse(
+    readFileSync(join(target, 'node_modules', '@deepseek-ai', 'dsh', 'package.json'), 'utf8'),
+  ).version
+  writeFileSync(marker, JSON.stringify({ installedAt: new Date().toISOString(), version: resolved }))
+  writeFileSync(join(target, '.dsh-version'), resolved)
+  console.log(`[install-runtime] dsh@${resolved} 依赖树就绪 → ${target}`)
 }
 
 /** 图标：resources/icon.png（运行时/托盘）+ build/icon.png（electron-builder 源），同源 1024px。 */

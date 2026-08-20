@@ -9,7 +9,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron'
 import { startDsh, type DshControl } from './dsh/spawn.js'
 import { createTray, syncTrayAutostart, type TrayHandlers } from './tray.js'
-import { dshBinScript, dshHomeDir, iconPath, nodeExecutable, preloadPath } from './paths.js'
+import { dshBinScript, dshHomeDir, iconPath, nodeExecutable, preloadPath, resourcesDir } from './paths.js'
 import { getLaunchMinimized, setLaunchMinimized } from './settings.js'
 import { isAutostartEnabled, setAutostart } from './autostart.js'
 import { initUpdater, checkForUpdates as runUpdateCheck, setRunInstaller } from './updater.js'
@@ -17,7 +17,7 @@ import { initUpdater, checkForUpdates as runUpdateCheck, setRunInstaller } from 
 // UpdateInfo.path 只是 latest.yml 里的相对文件名，spawn 会 ENOENT。
 import type { UpdateDownloadedEvent } from 'electron-updater'
 import { join } from 'node:path'
-import { copyFileSync, mkdirSync } from 'node:fs'
+import { copyFileSync, mkdirSync, readFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { desktopPluginDir } from './paths.js'
 import { log } from './log.js'
@@ -26,6 +26,19 @@ import { INJECT_TITLEBAR } from './titlebar.js'
 let win: BrowserWindow | null = null
 let dsh: DshControl | null = null
 let quitting = false
+
+/**
+ * 内置 dsh 运行时版本（resources/dsh/.dsh-version，install-runtime 写入）。
+ * dev 未生成 resources 时返回 'dev'；读取失败（如旧包未带该文件）返回 'unknown'。
+ */
+function readDshVersion(): string {
+  try {
+    const v = readFileSync(join(resourcesDir(), 'dsh', '.dsh-version'), 'utf8').trim()
+    return v === '' ? 'unknown' : v
+  } catch {
+    return app.isPackaged ? 'unknown' : 'dev'
+  }
+}
 
 // 网页级窗口控制（win/linux frameless 用）：preload 注入的控制条经 IPC 调用。
 function registerWindowControls(): void {
@@ -65,6 +78,7 @@ function registerAppIpc(): void {
   })
   ipcMain.handle('dsh-app:get-info', () => ({
     appVersion: app.getVersion(),
+    dshVersion: readDshVersion(),
     dshHome: dshHomeDir(),
     logDir: join(app.getPath('userData'), 'logs'),
   }))
