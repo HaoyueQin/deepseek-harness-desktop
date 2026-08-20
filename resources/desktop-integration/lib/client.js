@@ -77,6 +77,27 @@ window.__ModuleLoader__.load({
 					.catch(() => setUpdate({ checking: false, unsupported: false, latest: null }))
 			}
 
+			// 后端（内置 dsh 运行时）版本检测与一键更新
+			const backend = desktop ? desktop.backend : undefined
+			const [backendStatus, setBackendStatus] = React.useState({
+				current: info ? info.dshVersion : "…", latest: null, stage: "idle", error: null,
+			})
+			React.useEffect(() => {
+				if (!backend) return
+				backend.onStatus((s) => setBackendStatus((prev) => ({ ...prev, ...s })))
+			}, [backend])
+			const checkBackend = () => {
+				if (!backend) return
+				setBackendStatus((s) => ({ ...s, stage: "checking", error: null }))
+				backend.check().then((r) => setBackendStatus((prev) => ({ ...prev, ...r }))).catch(() => {})
+			}
+			const doBackendUpdate = () => {
+				if (!backend || !backendStatus.latest) return
+				if (!window.confirm(`检测到新版后端 ${backendStatus.latest}，更新需要重启后端，确定更新？`)) return
+				setBackendStatus((s) => ({ ...s, stage: "updating", error: null }))
+				backend.update().then((r) => setBackendStatus((prev) => ({ ...prev, ...r }))).catch(() => {})
+			}
+
 			const rows = [
 				{
 					title: "开机自启", sub: "登录系统后自动启动",
@@ -116,6 +137,36 @@ window.__ModuleLoader__.load({
 								onClick: () => openPath(info ? info.logDir : ""),
 							}, "打开日志目录"),
 						),
+					),
+				),
+
+				// 后端更新
+				React.createElement("div", { style: rowStyle },
+					React.createElement("div", {},
+						React.createElement("div", { style: labelStyle }, "后端版本"),
+						React.createElement("div", { style: subStyle },
+							backendStatus.stage === "checking" ? "检查中…"
+								: backendStatus.stage === "updating" ? "更新中…"
+								: backendStatus.stage === "done" ? "更新完成，正在重启…"
+								: backendStatus.error ? `更新失败：${backendStatus.error}`
+								: backendStatus.latest
+									? `当前 ${backendStatus.current} → 发现新版 ${backendStatus.latest}`
+									: `当前 ${backendStatus.current}`,
+						),
+					),
+					React.createElement("div", { style: { display: "flex", gap: "8px", alignItems: "center" } },
+						React.createElement("button", {
+							style: ghostBtn, onClick: checkBackend,
+							disabled: backendStatus.stage === "checking" || backendStatus.stage === "updating",
+						},
+							backendStatus.stage === "checking" ? "检查中" : "检查更新",
+						),
+						backendStatus.latest
+							? React.createElement("button", {
+								style: btnStyle, onClick: doBackendUpdate,
+								disabled: backendStatus.stage === "updating" || backendStatus.stage === "done",
+							}, "一键更新")
+							: null,
 					),
 				),
 
