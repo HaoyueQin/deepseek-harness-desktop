@@ -13,6 +13,7 @@ import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 import { resourcesDir, nodeExecutable } from './paths.js'
 import { log } from './log.js'
+export { isInRange } from './dsh-updater-range.js'
 
 export type UpdateStage = 'idle' | 'checking' | 'updating' | 'done' | 'error'
 
@@ -56,17 +57,6 @@ function readVersionRange(): string {
   const range: unknown = pkg.devDependencies?.['@deepseek-ai/dsh']
   if (typeof range !== 'string' || range === '') throw new Error('package.json 缺少 @deepseek-ai/dsh 版本范围')
   return range
-}
-
-/** 判定某版本是否在范围内（可更新目标）。纯函数，便于测试。 */
-export function isInRange(version: string, range: string): boolean {
-  // 简易比较：仅支持 ^x.y.z 形式（当前场景）；同 minor 内任何 patch/prerelease 可更新。
-  const m = /^\^(\d+)\.(\d+)\.(\d+)(.*)$/.exec(range)
-  if (m === null) return version === range.replace(/^\^/, '')
-  const [, maj, min] = m
-  const v = /^(\d+)\.(\d+)\.(\d+)(.*)$/.exec(version)
-  if (v === null) return false
-  return v[1] === maj && v[2] === min
 }
 
 /**
