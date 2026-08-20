@@ -28,7 +28,8 @@ const dshHome = mkdtempSync(join(tmpdir(), 'dsh-smoke-'))
 // URL 行独占一行以 \n 收尾；锚定换行避免端口前几位时提前命中残缺地址
 const URL_LINE = /dsh web: (http:\/\/127\.0\.0\.1:\d+)\r?\n/
 
-const child = spawn(nodePath, [dshBin, 'web', '--port', '0'], {
+// --no-open：smoke 只验证端口发现链路，不弹系统浏览器（rc.8+ 默认会弹）
+const child = spawn(nodePath, [dshBin, 'web', '--port', '0', '--no-open'], {
   env: { ...process.env, DSH_HOME: dshHome },
   stdio: ['ignore', 'pipe', 'pipe'],
   windowsHide: true,
