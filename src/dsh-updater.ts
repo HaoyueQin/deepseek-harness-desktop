@@ -77,7 +77,7 @@ function report(o) { console.log('UPDATE_STATUS ' + JSON.stringify(o)) }
 report({ stage: 'checking', message: '查询最新版本…' })
 let latest = ''
 try {
-  const r = spawnSync('npm', ['view', '@deepseek-ai/dsh@' + range, 'version', '--json', '--registry', registry], { encoding: 'utf8', windowsHide: true })
+  const r = spawnSync('npm', ['view', '@deepseek-ai/dsh@' + range, 'version', '--json', '--registry', registry], { encoding: 'utf8', windowsHide: true, shell: process.platform === 'win32' })
   if (r.status !== 0) throw new Error((r.stderr || r.stdout || '').slice(0, 500))
   const parsed = JSON.parse(r.stdout)
   latest = Array.isArray(parsed) ? parsed[parsed.length - 1] : parsed
@@ -93,7 +93,7 @@ mkdirSync(tmpDir, { recursive: true })
 writeFileSync(join(tmpDir, 'package.json'),
   JSON.stringify({ name: 'dsh-update-tmp', private: true, dependencies: { '@deepseek-ai/dsh': latest } }, null, 2))
 const inst = spawnSync('npm', ['install', '--omit=dev', '--no-audit', '--no-fund', '--registry', registry], {
-  cwd: tmpDir, encoding: 'utf8', windowsHide: true, maxBuffer: 32 * 1024 * 1024,
+  cwd: tmpDir, encoding: 'utf8', windowsHide: true, maxBuffer: 32 * 1024 * 1024, shell: process.platform === 'win32',
 })
 if (inst.status !== 0) {
   report({ stage: 'error', message: (inst.stderr || inst.stdout || '').slice(-2000) })
@@ -129,8 +129,10 @@ export async function checkBackendUpdate(): Promise<BackendUpdateStatus> {
 
 function runNpmView(range: string): Promise<string> {
   return new Promise((resolve, reject) => {
+    // Windows 下 npm 是 .cmd 脚本，spawn 需 shell:true 才能执行
     const child = spawn(nodeExecutable(), ['--input-type=module', '--eval', UPDATE_SCRIPT, '--', 'unused', range, '--registry', 'https://registry.npmjs.org'], {
       windowsHide: true,
+      shell: process.platform === 'win32',
     })
     let out = ''
     let err = ''
@@ -203,6 +205,7 @@ function runInstall(tmpDir: string, version: string, registry: string): Promise<
   return new Promise((resolve, reject) => {
     const child = spawn(nodeExecutable(), ['--input-type=module', '--eval', UPDATE_SCRIPT, '--', tmpDir, version, '--registry', registry], {
       windowsHide: true,
+      shell: process.platform === 'win32',
     })
     let out = ''
     child.stdout?.on('data', (d) => {
