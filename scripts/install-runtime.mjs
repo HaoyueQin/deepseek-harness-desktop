@@ -111,12 +111,19 @@ async function installNode() {
     const inner = join(staging, `node-${version}-win-x64`)
     renameSync(join(inner, 'node.exe'), join(target, 'node.exe'))
     renameSync(join(inner, 'LICENSE'), join(target, 'LICENSE'))
+    // 保留 npm（设置页「一键更新后端」用）：官方 Node 发行版自带 npm，
+    // 只挪 node_modules/npm 与 npm.cmd，其余（corepack 等）丢弃。
+    renameSync(join(inner, 'node_modules', 'npm'), join(target, 'node_modules', 'npm'))
+    renameSync(join(inner, 'npm.cmd'), join(target, 'npm.cmd'))
     rmSync(staging, { recursive: true, force: true })
   } else {
     if (!ensureTool('tar', 'macOS/Linux 下解压 Node tar.gz 需要 tar。')) {
       throw new Error('缺少 tar，无法解压 Node')
     }
+    // strip-components=1 已把 node-<ver>-<plat>-<arch>/ 内全部解出；删除
+    // corepack 省体积，保留 bin/npm 与 lib/node_modules/npm（一键更新用）。
     execFileSync('tar', ['-xzf', archive, '-C', target, '--strip-components=1'], { stdio: 'inherit' })
+    rmSync(join(target, 'lib', 'node_modules', 'corepack'), { recursive: true, force: true })
   }
   rmSync(archive, { force: true })
   writeFileSync(marker, new Date().toISOString())
