@@ -49,8 +49,10 @@ jobs:
           curl -sSL -o build/favicon-source.svg \
             https://raw.githubusercontent.com/deepseek-ai/deepseek-harness/master/apps/web/public/favicon.svg
 
+      # 不用 npm ci / package-lock：dsh 版本由 package.json 的范围声明
+      # （^0.1.0-rc.8）跟随上游最新，lock 会把构建钉死在旧版。
       - name: Install build deps
-        run: npm ci
+        run: npm install --no-audit --no-fund
         env:
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
           ELECTRON_BUILDER_BINARIES_MIRROR: https://npmmirror.com/mirrors/electron-builder-binaries/
