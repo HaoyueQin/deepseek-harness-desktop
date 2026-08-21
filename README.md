@@ -17,24 +17,34 @@ English | [简体中文](README.zh.md)
 
 ## Features
 
-- **Zero-intrusion wrapper** — spawns your globally-installed `dsh` CLI as a child process (`node <dsh>/lib/bin.js web`), loads its localhost UI; the harness source is never modified. One dsh install shared by terminal and desktop — plugins, settings and versions always match
-- **In-app backend updates** — Settings → Desktop shows your dsh version; one click checks npm for the latest release and upgrades it (no terminal needed)
+### Backend (dsh) integration
+
+- **Zero-intrusion wrapper** — spawns your globally-installed `dsh` CLI as a child process (`node <dsh>/lib/bin.js web`), loads its localhost UI; the harness source is never modified. One dsh install shared by terminal and desktop — plugins, settings, credentials, sessions and versions always match (`DSH_HOME`, default `~/.dsh`)
 - **First-run setup page** — no dsh detected? The app offers a copyable install command or a one-click in-app install, then boots automatically
+- **In-app dsh updates** — Settings → Desktop shows your dsh version; one click checks npm for the latest release and upgrades it (no terminal needed)
+
+### Desktop experience
+
 - **Frameless immersive window** — no native title bar; the custom window controls (minimize / maximize / close) blend into the page with DeepSeek brand-blue hover and follow the light/dark theme
 - **Always-on tray** — closing the window hides to the system tray instead of quitting; the backend keeps running for instant resume
 - **Auto-start at login** — toggle in the tray menu (Windows/macOS native; Linux via XDG autostart)
 - **Port-conflict proof** — `--port 0` lets the OS pick a free port; the shell discovers the real address from dsh's stdout readiness line
-- **Shared data home** — uses the same `DSH_HOME` as the CLI (default `~/.dsh`, overridable via the environment variable); plugins, settings, credentials and sessions installed in the terminal are directly visible in the desktop app
 - **Single instance** — launching again focuses the existing window
 - **Full plugin freedom** — dynamic plugins (`cordis_define`/`cordis_run`), `$DSH_HOME/cordis.patch.yml`, and the npm plugin ecosystem all work exactly as in the web edition
-- **Desktop settings section** — the app's Settings page gains a "Desktop" tab (styled to match the harness UI): auto-start toggle, launch-minimized toggle, About card (version / data / log dirs), and a check-for-updates button — all in sync with the tray menu
-- **Auto-update** — checks silently 15s after launch: Windows downloads and guides you to run the installer (unsigned builds can't install silently); Linux AppImage replaces itself automatically; macOS excluded (needs signing)
+- **Desktop settings section** — the app's Settings page gains a "Desktop" tab (styled to match the harness UI): dsh version card (check & one-click upgrade), shell auto-update check, auto-start toggle, launch-minimized toggle, About card — all in sync with the tray menu
+- **Shell self-update** — checks silently 15s after launch: Windows downloads and guides you to run the installer (unsigned builds can't install silently); Linux AppImage replaces itself automatically; macOS excluded (needs signing)
 
 ## Screenshot
 
 ![DeepSeek Harness Desktop main window](./assets/screenshots/main-window.png)
 
 ## Install
+
+### Prerequisites
+
+- **Node.js ≥ 22** and the `dsh` CLI (`npm i -g @deepseek-ai/dsh`) — if missing, the app shows a setup page with a copyable command or a one-click in-app install
+
+### Download
 
 Download the installer for your platform from the [Releases](https://github.com/HaoyueQin/deepseek-harness-desktop/releases) page:
 
@@ -43,10 +53,6 @@ Download the installer for your platform from the [Releases](https://github.com/
 | Windows | `deepseek-harness-desktop-<ver>-setup.exe` | NSIS installer, x64 |
 | macOS | `.dmg` (Apple Silicon / Intel) | unsigned — first run: right-click → Open |
 | Linux | `.AppImage` + `.deb` | x64 |
-
-### Prerequisites
-
-- **Node.js ≥ 22** and the `dsh` CLI (`npm i -g @deepseek-ai/dsh`) — if missing, the app shows a setup page with a copyable command or a one-click in-app install
 
 ### First launch
 

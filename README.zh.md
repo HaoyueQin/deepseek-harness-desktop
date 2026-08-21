@@ -17,24 +17,34 @@
 
 ## 特性
 
-- **零侵入包装** — 以子进程方式运行你全局安装的 dsh CLI（`node <dsh>/lib/bin.js web`），加载其 localhost 界面；harness 源码零改动。终端与桌面端共用同一份 dsh——插件、设置、版本永远一致
-- **应用内更新后端** — 设置 → 桌面显示当前 dsh 版本；一键检查 npm 最新版并升级，无需碰命令行
+### 后端（dsh）集成
+
+- **零侵入包装** — 以子进程方式运行你全局安装的 dsh CLI（`node <dsh>/lib/bin.js web`），加载其 localhost 界面；harness 源码零改动。终端与桌面端共用同一份 dsh——插件、设置、凭证、会话与版本永远一致（`DSH_HOME`，默认 `~/.dsh`）
 - **首次启动引导安装** — 未检测到 dsh？应用提供可复制的安装命令或壳内一键安装，装完自动进入
+- **应用内更新 dsh** — 设置 → 桌面显示当前 dsh 版本；一键检查 npm 最新版并升级，无需碰命令行
+
+### 桌面体验
+
 - **无边框沉浸窗口** — 无原生标题栏；自绘窗口控制按钮（最小化/最大化/关闭）以 DeepSeek 品牌蓝 hover 融入页面，并随明暗主题切换
 - **托盘常驻** — 关闭窗口隐藏到系统托盘而非退出，后端持续运行，随时秒开
 - **开机自启** — 托盘菜单一键开关（Windows/macOS 原生实现；Linux 走 XDG autostart）
 - **端口冲突免疫** — `--port 0` 让系统分配空闲端口，壳从 dsh 的 stdout 就绪行读取真实地址
-- **共享数据目录** — 与 CLI 共用同一份 `DSH_HOME`（默认 `~/.dsh`，可通过环境变量覆盖），终端安装的插件、设置、凭证、会话在桌面端直接可见
 - **单实例** — 重复启动会聚焦已有窗口
 - **插件自由不受限** — 动态插件（`cordis_define`/`cordis_run`）、`$DSH_HOME/cordis.patch.yml`、npm 插件生态均与 Web 版完全一致
-- **设置页桌面分区** — 设置页新增「桌面」标签页（UI 契合 harness 设计）：开机自启开关、启动最小化开关、关于卡片（版本/数据/日志目录）、更新检查按钮，均与托盘菜单双向同步
-- **自动更新** — 启动 15 秒后静默检查：Windows 下载后引导运行安装包（未签名无法静默安装）；Linux AppImage 全自动替换；macOS 暂不支持（需签名）
+- **设置页桌面分区** — 设置页新增「桌面」标签页（UI 契合 harness 设计）：dsh 版本卡片（检查并一键升级）、桌壳自身更新检查、开机自启开关、启动最小化开关、关于卡片，均与托盘菜单双向同步
+- **桌壳自更新** — 启动 15 秒后静默检查：Windows 下载后引导运行安装包（未签名无法静默安装）；Linux AppImage 全自动替换；macOS 暂不支持（需签名）
 
 ## 界面预览
 
 ![DeepSeek Harness Desktop 主界面](./assets/screenshots/main-window.png)
 
 ## 安装
+
+### 前置条件
+
+- **Node.js ≥ 22** 与 dsh CLI（`npm i -g @deepseek-ai/dsh`）——若未安装，应用会显示引导页，提供可复制命令或壳内一键安装
+
+### 下载
 
 从 [Releases](https://github.com/HaoyueQin/deepseek-harness-desktop/releases) 下载对应平台的安装包：
 
@@ -43,10 +53,6 @@
 | Windows | `deepseek-harness-desktop-<ver>-setup.exe` | NSIS 安装包，x64 |
 | macOS | `.dmg`（Apple Silicon / Intel） | 未签名 — 首次运行需右键 → 打开 |
 | Linux | `.AppImage` + `.deb` | x64 |
-
-### 前置条件
-
-- **Node.js ≥ 22** 与 dsh CLI（`npm i -g @deepseek-ai/dsh`）——若未安装，应用会显示引导页，提供可复制命令或壳内一键安装
 
 ### 首次启动
 
