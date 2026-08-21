@@ -21,7 +21,7 @@ import {
 // UpdateInfo.path 只是 latest.yml 里的相对文件名，spawn 会 ENOENT。
 import type { UpdateDownloadedEvent } from 'electron-updater'
 import { join } from 'node:path'
-import { copyFileSync, mkdirSync, readFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, readFileSync, renameSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { desktopPluginDir } from './paths.js'
 import { log } from './log.js'
@@ -160,9 +160,18 @@ function ensureDesktopPlugin(dshHome: string): void {
   const target = join(dshHome, 'profiles', 'node_modules', 'dsh-desktop-integration')
   try {
     mkdirSync(join(target, 'lib'), { recursive: true })
-    copyFileSync(join(src, 'package.json'), join(target, 'package.json'))
-    copyFileSync(join(src, 'lib', 'index.js'), join(target, 'lib', 'index.js'))
-    copyFileSync(join(src, 'lib', 'client.js'), join(target, 'lib', 'client.js'))
+    // 原子写：先落临时名再 rename，避免 dsh 恰好在写入中途读到半截
+    // bundle（表现为页面端 React #130 渲染崩溃）。
+    const files: Array<[string, string]> = [
+      ['package.json', join('package.json')],
+      ['lib/index.js', join('lib', 'index.js')],
+      ['lib/client.js', join('lib', 'client.js')],
+    ]
+    for (const [rel, dest] of files) {
+      const tmp = join(target, rel + '.tmp')
+      copyFileSync(join(src, rel), tmp)
+      renameSync(tmp, join(target, dest))
+    }
     log('desktop-plugin: 已同步到 ' + target)
   } catch (err) {
     log(`desktop-plugin: 同步失败 ${String(err)}`)
