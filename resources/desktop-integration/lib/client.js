@@ -16,15 +16,15 @@ window.__ModuleLoader__.load({
 			display: "flex", alignItems: "center", justifyContent: "space-between",
 			padding: "12px 14px", borderRadius: "8px",
 			background: "var(--dsw-specific-bubble, #f5f7fb)",
-			border: "1px solid var(--dsw-alias-color-border-default, transparent)",
+			border: "1px solid var(--dsw-alias-border-l2, transparent)",
 			gap: "12px",
 		}
 		const labelStyle = {
 			fontSize: "13px", lineHeight: "1.5",
-			color: "var(--dsw-alias-text-color-text-1, #1f2329)",
+			color: "var(--dsw-alias-label-primary, #1f2329)",
 		}
 		const subStyle = {
-			fontSize: "12px", color: "var(--dsw-alias-text-color-text-2, #8a919f)",
+			fontSize: "12px", color: "var(--dsw-alias-label-secondary, #8a919f)",
 			marginTop: "2px",
 		}
 		const btnStyle = {
@@ -33,10 +33,10 @@ window.__ModuleLoader__.load({
 			whiteSpace: "nowrap", flexShrink: 0,
 		}
 		const ghostBtn = {
-			border: "1px solid var(--dsw-alias-color-border-default, #d0d5de)",
+			border: "1px solid var(--dsw-alias-border-l2, #d0d5de)",
 			borderRadius: "6px", padding: "6px 14px", background: "transparent",
 			fontSize: "12px", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
-			color: "var(--dsw-alias-text-color-text-1, #1f2329)",
+			color: "var(--dsw-alias-label-primary, #1f2329)",
 		}
 
 		/** 自绘开关（原生 checkbox + 品牌蓝），不依赖未确认的组件 API。 */
@@ -173,10 +173,10 @@ window.__ModuleLoader__.load({
 				: Number.parseInt(convWidth, 10)
 			const presetBtn = (mode, text) => React.createElement("button", {
 				style: {
-					border: "1px solid " + (convWidth === mode ? BRAND : "var(--dsw-alias-color-border-default, #d0d5de)"),
+					border: "1px solid " + (convWidth === mode ? BRAND : "var(--dsw-alias-border-l2, #d0d5de)"),
 					borderRadius: "6px", padding: "6px 14px", background: "transparent",
 					fontSize: "12px", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
-					color: convWidth === mode ? BRAND : "var(--dsw-alias-text-color-text-1, #1f2329)",
+					color: convWidth === mode ? BRAND : "var(--dsw-alias-label-primary, #1f2329)",
 				},
 				onClick: () => setConvWidthMode(mode),
 			}, text)
