@@ -65,7 +65,7 @@ function readVersionRange(): string {
  */
 const UPDATE_SCRIPT = `
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
 const [tmpDir, range] = process.argv.slice(2)
@@ -73,11 +73,21 @@ const registryIdx = process.argv.indexOf('--registry')
 const registry = registryIdx >= 0 ? process.argv[registryIdx + 1] : 'https://registry.npmjs.org'
 function report(o) { console.log('UPDATE_STATUS ' + JSON.stringify(o)) }
 
+// 完全自包含：用当前 node（内置发行版）跑随附的 npm-cli.js，
+// 不依赖用户机器上的系统 node/npm（打包用户可能没有）。
+const nodeDir = dirname(process.execPath)
+const npmCli = process.platform === 'win32'
+  ? join(nodeDir, 'node_modules', 'npm', 'bin', 'npm-cli.js')
+  : join(nodeDir, 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js')
+function npm(args, opts = {}) {
+  return spawnSync(process.execPath, [npmCli, ...args], { encoding: 'utf8', windowsHide: true, maxBuffer: 32 * 1024 * 1024, ...opts })
+}
+
 // 1) 检测范围内最新版
 report({ stage: 'checking', message: '查询最新版本…' })
 let latest = ''
 try {
-  const r = spawnSync('npm', ['view', '@deepseek-ai/dsh@' + range, 'version', '--json', '--registry', registry], { encoding: 'utf8', windowsHide: true, shell: process.platform === 'win32' })
+  const r = npm(['view', '@deepseek-ai/dsh@' + range, 'version', '--json', '--registry', registry])
   if (r.status !== 0) throw new Error((r.stderr || r.stdout || '').slice(0, 500))
   const parsed = JSON.parse(r.stdout)
   latest = Array.isArray(parsed) ? parsed[parsed.length - 1] : parsed
@@ -92,9 +102,7 @@ report({ stage: 'installing', message: '下载安装 ' + latest + '…' })
 mkdirSync(tmpDir, { recursive: true })
 writeFileSync(join(tmpDir, 'package.json'),
   JSON.stringify({ name: 'dsh-update-tmp', private: true, dependencies: { '@deepseek-ai/dsh': latest } }, null, 2))
-const inst = spawnSync('npm', ['install', '--omit=dev', '--no-audit', '--no-fund', '--registry', registry], {
-  cwd: tmpDir, encoding: 'utf8', windowsHide: true, maxBuffer: 32 * 1024 * 1024, shell: process.platform === 'win32',
-})
+const inst = npm(['install', '--omit=dev', '--no-audit', '--no-fund', '--registry', registry], { cwd: tmpDir })
 if (inst.status !== 0) {
   report({ stage: 'error', message: (inst.stderr || inst.stdout || '').slice(-2000) })
   process.exit(1)
@@ -129,10 +137,8 @@ export async function checkBackendUpdate(): Promise<BackendUpdateStatus> {
 
 function runNpmView(range: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    // Windows 下 npm 是 .cmd 脚本，spawn 需 shell:true 才能执行
     const child = spawn(nodeExecutable(), ['--input-type=module', '--eval', UPDATE_SCRIPT, '--', 'unused', range, '--registry', 'https://registry.npmjs.org'], {
       windowsHide: true,
-      shell: process.platform === 'win32',
     })
     let out = ''
     let err = ''
@@ -205,7 +211,6 @@ function runInstall(tmpDir: string, version: string, registry: string): Promise<
   return new Promise((resolve, reject) => {
     const child = spawn(nodeExecutable(), ['--input-type=module', '--eval', UPDATE_SCRIPT, '--', tmpDir, version, '--registry', registry], {
       windowsHide: true,
-      shell: process.platform === 'win32',
     })
     let out = ''
     child.stdout?.on('data', (d) => {
