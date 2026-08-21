@@ -30,11 +30,12 @@ window.__ModuleLoader__.load({
 		const btnStyle = {
 			border: "none", borderRadius: "6px", padding: "6px 14px",
 			background: BRAND, color: "#fff", fontSize: "12px", cursor: "pointer",
+			whiteSpace: "nowrap", flexShrink: 0,
 		}
 		const ghostBtn = {
 			border: "1px solid var(--dsw-alias-color-border-default, #d0d5de)",
 			borderRadius: "6px", padding: "6px 14px", background: "transparent",
-			fontSize: "12px", cursor: "pointer",
+			fontSize: "12px", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
 			color: "var(--dsw-alias-text-color-text-1, #1f2329)",
 		}
 
@@ -140,10 +141,13 @@ window.__ModuleLoader__.load({
 					),
 				),
 
-				// 后端更新
+				// dsh CLI 版本管理（纯壳架构：壳复用用户已装的 dsh）
 				React.createElement("div", { style: rowStyle },
 					React.createElement("div", {},
-						React.createElement("div", { style: labelStyle }, "后端版本"),
+						React.createElement("div", { style: labelStyle }, "dsh 版本"),
+						React.createElement("div", { style: subStyle },
+							"管理 dsh 命令行工具的版本；桌面壳与终端共享同一份安装",
+						),
 						React.createElement("div", { style: subStyle },
 							backendStatus.stage === "checking" ? "检查中…"
 								: backendStatus.stage === "updating" ? "更新中…"
@@ -170,18 +174,21 @@ window.__ModuleLoader__.load({
 					),
 				),
 
-				// 更新检查
+				// 桌壳自身更新（electron-updater）
 				React.createElement("div", { style: rowStyle },
 					React.createElement("div", {},
 						React.createElement("div", { style: labelStyle }, "自动更新"),
 						React.createElement("div", { style: subStyle },
+							"检测 DeepSeek Harness Desktop 新版本并自动下载安装包",
+						),
+						React.createElement("div", { style: subStyle },
 							update.checking ? "检查中…"
-								: update.unsupported ? "macOS 暂不支持自动更新（需签名证书），请从 Release 页下载"
-								: update.latest ? `发现新版本 ${update.latest}（可在 Release 页下载）`
-								: "已是最新版本",
+								: update.unsupported ? "macOS 暂不支持（需签名证书），请从 Release 页下载"
+								: update.latest ? `当前 ${info ? info.appVersion : "…"} → 发现新版 ${update.latest}`
+								: `当前 ${info ? info.appVersion : "…"}`,
 						),
 					),
-					React.createElement("button", { style: btnStyle, onClick: check, disabled: update.checking || update.unsupported },
+					React.createElement("button", { style: ghostBtn, onClick: check, disabled: update.checking || update.unsupported },
 						update.checking ? "检查中" : "检查更新",
 					),
 				),
