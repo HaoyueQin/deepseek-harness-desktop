@@ -1,29 +1,28 @@
 /**
- * 后端（@deepseek-ai/dsh）版本检测与一键更新。
+ * 后端（用户已装的 dsh CLI）版本检测与一键升级（纯壳架构）。
  * 与 updater.ts（桌壳自身 electron-updater）正交。
  *
- * 更新机制：spawn 内置 node 跑内联 ESM，用 npm view/install 到临时目录，
- * 成功后原子替换 resources/dsh，再交给 main 注入的 restart 处理器
- * （停旧 dsh → 重启 → 窗口重载）。失败不伤旧版。
+ * 检测：`npm view @deepseek-ai/dsh@latest version` 与当前版本比较；
+ * 升级：`npm i -g @deepseek-ai/dsh@<版本>`，完成后经 main 注入的
+ * restart 处理器重启后端并重载窗口。全程走系统 npm（能装 dsh 必有 npm）。
  */
 
-import { app } from 'electron'
-import { readFileSync, rmSync, renameSync, writeFileSync, mkdirSync } from 'node:fs'
 import { spawn } from 'node:child_process'
-import { join } from 'node:path'
-import { resourcesDir, nodeExecutable } from './paths.js'
 import { log } from './log.js'
-export { isInRange } from './dsh-updater-range.js'
+import { locateDsh } from './dsh-locator.js'
 
 export type UpdateStage = 'idle' | 'checking' | 'updating' | 'done' | 'error'
 
 export interface BackendUpdateStatus {
+  /** 用户当前 dsh 版本。 */
   current: string
+  /** npm 上最新版；与当前相同则为 null（无更新）。 */
   latest: string | null
   stage: UpdateStage
   error?: string
 }
 
+let currentVersion = 'unknown'
 let status: BackendUpdateStatus = { current: 'unknown', latest: null, stage: 'idle' }
 const listeners: Array<(s: BackendUpdateStatus) => void> = []
 
@@ -35,98 +34,40 @@ export function onBackendUpdateStatus(cb: (s: BackendUpdateStatus) => void): voi
   listeners.push(cb)
 }
 
-export function isDevBackend(): boolean {
-  return !app.isPackaged
+/** main 在定位到用户 dsh 后注入当前版本。 */
+export function initBackendUpdater(current: string): void {
+  currentVersion = current
+  status.current = current
 }
 
-/** 当前内置 dsh 版本（resources/dsh/.dsh-version）。 */
-function readCurrentVersion(): string {
-  try {
-    const v = readFileSync(join(resourcesDir(), 'dsh', '.dsh-version'), 'utf8').trim()
-    return v === '' ? 'unknown' : v
-  } catch {
-    return isDevBackend() ? 'dev' : 'unknown'
-  }
+function runNpm(args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    // 参数均为固定字面量；shell:true 仅用于 Windows 解析 .cmd shim
+    const child = spawn('npm', args, {
+      windowsHide: true,
+      shell: process.platform === 'win32',
+    })
+    let out = ''
+    let err = ''
+    child.stdout?.on('data', (d: Buffer) => { out += d.toString() })
+    child.stderr?.on('data', (d: Buffer) => { err += d.toString() })
+    child.on('error', reject)
+    child.on('exit', (code) => {
+      if (code === 0) resolve(out.trim())
+      else reject(new Error(`npm ${args[0]} 失败 (code=${String(code)}) ${(err || out).slice(-400)}`))
+    })
+  })
 }
 
-/** 版本范围：package.json devDependencies 的 @deepseek-ai/dsh。 */
-function readVersionRange(): string {
-  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
-    devDependencies?: Record<string, string>
-  }
-  const range: unknown = pkg.devDependencies?.['@deepseek-ai/dsh']
-  if (typeof range !== 'string' || range === '') throw new Error('package.json 缺少 @deepseek-ai/dsh 版本范围')
-  return range
-}
-
-/**
- * 更新脚本正文（内联 ESM，spawn 内置 node 执行）。
- * argv: [tmpDir, range, --registry <url>]；npm 从系统 PATH 取（内置 Node 自带）。
- */
-const UPDATE_SCRIPT = `
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { spawnSync } from 'node:child_process'
-
-// --eval 模式下 process.argv 无脚本名占位：argv = [execPath, ...args]
-const [tmpDir, range] = process.argv.slice(1)
-const registryIdx = process.argv.indexOf('--registry')
-const registry = registryIdx >= 0 ? process.argv[registryIdx + 1] : 'https://registry.npmjs.org'
-function report(o) { console.log('UPDATE_STATUS ' + JSON.stringify(o)) }
-
-// 完全自包含：用当前 node（内置发行版）跑随附的 npm-cli.js，
-// 不依赖用户机器上的系统 node/npm（打包用户可能没有）。
-const nodeDir = dirname(process.execPath)
-const npmCli = process.platform === 'win32'
-  ? join(nodeDir, 'node_modules', 'npm', 'bin', 'npm-cli.js')
-  : join(nodeDir, 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js')
-function npm(args, opts = {}) {
-  return spawnSync(process.execPath, [npmCli, ...args], { encoding: 'utf8', windowsHide: true, maxBuffer: 32 * 1024 * 1024, ...opts })
-}
-
-// 1) 检测范围内最新版
-report({ stage: 'checking', message: '查询最新版本…' })
-let latest = ''
-try {
-  const r = npm(['view', '@deepseek-ai/dsh@' + range, 'version', '--json', '--registry', registry])
-  if (r.status !== 0) throw new Error((r.stderr || r.stdout || '').slice(0, 500))
-  const parsed = JSON.parse(r.stdout)
-  latest = Array.isArray(parsed) ? parsed[parsed.length - 1] : parsed
-} catch (e) {
-  report({ stage: 'error', message: String(e) })
-  process.exit(1)
-}
-report({ stage: 'checking', message: '最新版本 ' + latest })
-
-// 2) 安装到临时目录
-report({ stage: 'installing', message: '下载安装 ' + latest + '…' })
-mkdirSync(tmpDir, { recursive: true })
-writeFileSync(join(tmpDir, 'package.json'),
-  JSON.stringify({ name: 'dsh-update-tmp', private: true, dependencies: { '@deepseek-ai/dsh': latest } }, null, 2))
-const inst = npm(['install', '--omit=dev', '--no-audit', '--no-fund', '--registry', registry], { cwd: tmpDir })
-if (inst.status !== 0) {
-  report({ stage: 'error', message: (inst.stderr || inst.stdout || '').slice(-2000) })
-  process.exit(1)
-}
-report({ stage: 'installing', message: '安装完成' })
-`
-
-/**
- * 主进程触发检测。dev 模式仅读当前版本，不查 registry。
- */
+/** 检查 npm 上最新版；与当前一致时 latest 置 null（无更新）。 */
 export async function checkBackendUpdate(): Promise<BackendUpdateStatus> {
-  status.current = readCurrentVersion()
-  if (isDevBackend()) {
-    status.latest = null
-    status.stage = 'idle'
-    publish()
-    return { ...status }
-  }
+  status.current = currentVersion
   status.stage = 'checking'
+  status.error = undefined
   publish()
   try {
-    const latest = await runNpmView(readVersionRange())
-    status.latest = latest
+    const latest = await runNpm(['view', '@deepseek-ai/dsh@latest', 'version'])
+    status.latest = latest === '' || latest === currentVersion ? null : latest
     status.stage = 'idle'
   } catch (err) {
     status.stage = 'error'
@@ -136,110 +77,38 @@ export async function checkBackendUpdate(): Promise<BackendUpdateStatus> {
   return { ...status }
 }
 
-function runNpmView(range: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(nodeExecutable(), ['--input-type=module', '--eval', UPDATE_SCRIPT, '--', 'unused', range, '--registry', 'https://registry.npmjs.org'], {
-      windowsHide: true,
-    })
-    let out = ''
-    let err = ''
-    child.stdout?.on('data', (d) => { out += d.toString() })
-    child.stderr?.on('data', (d) => { err += d.toString() })
-    child.on('error', reject)
-    child.on('exit', (code) => {
-      const line = out.split('\n').find((l) => l.startsWith('UPDATE_STATUS '))
-      if (line === undefined || code !== 0) {
-        reject(new Error(`npm view 失败 (${String(code)}) ${err || out}`.slice(0, 500)))
-        return
-      }
-      try {
-        const o = JSON.parse(line.slice('UPDATE_STATUS '.length)) as { stage: string; message: string }
-        if (o.stage === 'error') { reject(new Error(o.message)); return }
-        resolve(o.message.replace(/^最新版本 /, ''))
-      } catch {
-        reject(new Error('npm view 输出解析失败'))
-      }
-    })
-  })
-}
-
-/** 一键更新：装临时目录 → 原子替换 → 交给 restart 处理器。 */
 let restartHandler: (() => Promise<void>) | null = null
 export function setBackendRestartHandler(fn: () => Promise<void>): void {
   restartHandler = fn
 }
 
+/** 一键升级：npm i -g 固定目标版本 → 重新定位 → 重启后端。 */
 export async function updateBackend(): Promise<BackendUpdateStatus> {
-  status.current = readCurrentVersion()
-  if (isDevBackend()) {
-    status.stage = 'error'
-    status.error = '开发模式请用 npm install 或重新 build:runtime'
-    publish()
-    return { ...status }
-  }
-  if (status.latest === null || status.latest === status.current) {
+  if (status.latest === null) {
     status.stage = 'idle'
     publish()
     return { ...status }
   }
+  if (status.stage === 'updating') return { ...status }
+  const target = status.latest
   status.stage = 'updating'
+  status.error = undefined
   publish()
-
-  const dshDir = join(resourcesDir(), 'dsh')
-  const tmpDir = join(resourcesDir(), '.dsh-update-tmp')
   try {
-    await runInstall(tmpDir, status.latest, 'https://registry.npmjs.org')
-    // 原子替换：先删旧再改名（同卷 rename 原子），失败时旧版不动
-    rmSync(dshDir, { recursive: true, force: true })
-    renameSync(tmpDir, dshDir)
-    writeFileSync(join(dshDir, '.dsh-version'), status.latest)
-    log(`dsh-updater: 已替换为 ${status.latest}`)
+    await runNpm(['i', '-g', `@deepseek-ai/dsh@${target}`])
+    const located = locateDsh()
+    if (located === null) throw new Error('升级完成但未检测到 dsh，请重启桌面壳')
+    currentVersion = located.version
+    status.current = located.version
+    status.latest = null
     status.stage = 'done'
-    publish()
+    log(`dsh-updater: 已升级到 ${located.version}`)
     if (restartHandler !== null) await restartHandler()
-    return { ...status }
   } catch (err) {
-    rmSync(tmpDir, { recursive: true, force: true })
     status.stage = 'error'
     status.error = String(err)
-    publish()
-    log(`dsh-updater: 更新失败 ${String(err)}`)
-    return { ...status }
+    log(`dsh-updater: 升级失败 ${String(err)}`)
   }
-}
-
-function runInstall(tmpDir: string, version: string, registry: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(nodeExecutable(), ['--input-type=module', '--eval', UPDATE_SCRIPT, '--', tmpDir, version, '--registry', registry], {
-      windowsHide: true,
-    })
-    let out = ''
-    child.stdout?.on('data', (d) => {
-      const text = d.toString()
-      out += text
-      const line = text.split('\n').find((l: string) => l.startsWith('UPDATE_STATUS '))
-      if (line !== undefined) {
-        try {
-          status.stage = (JSON.parse(line.slice('UPDATE_STATUS '.length)) as { stage: UpdateStage }).stage
-          publish()
-        } catch { /* 忽略 */ }
-      }
-    })
-    child.stderr?.on('data', () => { /* npm 日志走 stderr，不展示 */ })
-    child.on('error', reject)
-    child.on('exit', (code) => {
-      if (code === 0) resolve()
-      else {
-        const errLine = out.split('\n').find((l: string) => l.startsWith('UPDATE_STATUS ') && l.includes('"error"'))
-        reject(new Error(errLine !== undefined
-          ? (JSON.parse(errLine.slice('UPDATE_STATUS '.length)) as { message: string }).message
-          : `npm install 失败 (code=${String(code)})`))
-      }
-    })
-  })
-}
-
-/** 供 main.ts 启动时初始化。 */
-export function initBackendUpdater(): void {
-  status.current = readCurrentVersion()
+  publish()
+  return { ...status }
 }

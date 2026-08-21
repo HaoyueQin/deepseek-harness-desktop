@@ -4,25 +4,31 @@
  *   2) 该地址 HTTP 200
  * 然后停止进程。这是端口发现链路的可复现验证。
  *
- * 用法：node scripts/smoke.mjs            # 用项目 node_modules 的 dsh + 系统 node
- *       node scripts/smoke.mjs --runtime  # 用 resources/ 的内嵌运行时（阶段2 后）
+ * 纯壳架构（v1.0.0 起）：用系统已装的 dsh（与桌面壳运行时同源）。
+ * 前置：npm i -g @deepseek-ai/dsh。
  */
 
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { mkdtempSync } from 'node:fs'
+import { existsSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const useRuntime = process.argv.includes('--runtime')
 
-const nodePath = useRuntime
-  ? join(root, 'resources', 'runtime', 'node', process.platform === 'win32' ? 'node.exe' : 'bin/node')
-  : 'node'
-const dshBin = useRuntime
-  ? join(root, 'resources', 'dsh', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
-  : join(root, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
+// 与 src/dsh-locator.ts 同逻辑：PATH 验证 + npm root -g 推导 bin.js
+function locateDsh() {
+  const ver = spawnSync('dsh', ['--version'], { encoding: 'utf8', windowsHide: true, shell: process.platform === 'win32' })
+  if (ver.status !== 0 || !ver.stdout?.trim()) throw new Error('未检测到 dsh（先 npm i -g @deepseek-ai/dsh）')
+  const rootDir = spawnSync('npm', ['root', '-g'], { encoding: 'utf8', windowsHide: true, shell: process.platform === 'win32' })
+  if (rootDir.status !== 0 || !rootDir.stdout?.trim()) throw new Error('未检测到 npm')
+  const binJs = join(rootDir.stdout.trim(), '@deepseek-ai', 'dsh', 'lib', 'bin.js')
+  if (!existsSync(binJs)) throw new Error(`未找到 ${binJs}`)
+  return binJs
+}
+
+const nodePath = 'node'
+const dshBin = locateDsh()
 
 const dshHome = mkdtempSync(join(tmpdir(), 'dsh-smoke-'))
 // URL 行独占一行以 \n 收尾；锚定换行避免端口前几位时提前命中残缺地址
