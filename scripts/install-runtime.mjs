@@ -111,8 +111,9 @@ async function installNode() {
     const inner = join(staging, `node-${version}-win-x64`)
     renameSync(join(inner, 'node.exe'), join(target, 'node.exe'))
     renameSync(join(inner, 'LICENSE'), join(target, 'LICENSE'))
-    // 保留 npm（设置页「一键更新后端」用）：官方 Node 发行版自带 npm，
-    // 只挪 node_modules/npm 与 npm.cmd，其余（corepack 等）丢弃。
+    // 保留 npm（设置页「一键更新后端」用）：npm 本体在发行版的
+    // node_modules/npm/，入口 npm.cmd 按相对自身路径引用它，两者布局不变。
+    mkdirSync(join(target, 'node_modules'), { recursive: true })
     renameSync(join(inner, 'node_modules', 'npm'), join(target, 'node_modules', 'npm'))
     renameSync(join(inner, 'npm.cmd'), join(target, 'npm.cmd'))
     rmSync(staging, { recursive: true, force: true })
