@@ -68,7 +68,8 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
-const [tmpDir, range] = process.argv.slice(2)
+// --eval 模式下 process.argv 无脚本名占位：argv = [execPath, ...args]
+const [tmpDir, range] = process.argv.slice(1)
 const registryIdx = process.argv.indexOf('--registry')
 const registry = registryIdx >= 0 ? process.argv[registryIdx + 1] : 'https://registry.npmjs.org'
 function report(o) { console.log('UPDATE_STATUS ' + JSON.stringify(o)) }
