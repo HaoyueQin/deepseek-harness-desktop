@@ -52,6 +52,50 @@ window.__ModuleLoader__.load({
 			)
 		}
 
+		// ===== 会话区域宽度 =====
+		// dsh 对话列全部锚定 CSS 变量 --dsh-chat-content-width（ConversationRoot
+		// 默认 748px；输入框 = 宽度+32px、表格 breakout 等均引用同一变量）。
+		// 注入一条 !important 规则覆盖即可全局生效；百分比相对父容器解析，
+		// 侧边栏插件（如 better-sidebar）开合改变容器宽度时自动自适应。
+		const CONV_WIDTH_KEY = "dsh-desktop-conv-width"
+		const CONV_WIDTH_STYLE_ID = "dsh-desktop-conv-width"
+		const CONV_WIDTH_SELECTOR = "div[data-phase]:has(> [data-conversation-scroll])"
+
+		function normalizeConvWidth(value) {
+			if (value === "standard" || value === "full") return value
+			const n = Number.parseInt(value, 10)
+			return Number.isFinite(n) && n >= 40 && n <= 95 ? String(n) : "standard"
+		}
+
+		function getConvWidth() {
+			try { return normalizeConvWidth(localStorage.getItem(CONV_WIDTH_KEY)) } catch { return "standard" }
+		}
+
+		/** 应用宽度：standard 移除覆盖（恢复上游默认 748px），其余注入百分比。 */
+		function applyConvWidth(value) {
+			const v = normalizeConvWidth(value)
+			try { localStorage.setItem(CONV_WIDTH_KEY, v) } catch { /* 存储不可用时仅本次生效 */ }
+			let tag = document.getElementById(CONV_WIDTH_STYLE_ID)
+			if (v === "standard") {
+				if (tag) tag.remove()
+				return v
+			}
+			const pct = v === "full" ? "90%" : v + "%"
+			if (!tag) {
+				tag = document.createElement("style")
+				tag.id = CONV_WIDTH_STYLE_ID
+				document.head.appendChild(tag)
+			}
+			// 子树 max-width 过渡：预设切换/滑块调节时平滑变化而非突变
+			tag.textContent = `${CONV_WIDTH_SELECTOR}{--dsh-chat-content-width:${pct}!important}`
+				+ `${CONV_WIDTH_SELECTOR} *{transition:max-width .22s ease-out}`
+			return v
+		}
+
+		// factory 阶段立即应用（localStorage 早绘缓存）：style 标签先于首帧注入，
+		// 之后任何 DOM 重建都持续命中该规则，无需 observer。
+		if (typeof document !== "undefined") applyConvWidth(getConvWidth())
+
 		function DesktopSection() {
 			const desktop = typeof window !== "undefined" ? window.dshDesktop : undefined
 			const [autostart, setAutostart] = React.useState(false)
@@ -99,6 +143,44 @@ window.__ModuleLoader__.load({
 				backend.update().then((r) => setBackendStatus((prev) => ({ ...prev, ...r }))).catch(() => {})
 			}
 
+			// 会话区域宽度：standard=上游默认 748px（max-width 封顶，窄窗自动撑满，
+			// 保持原有响应式策略）；full=90%；数字=自定义百分比
+			const [convWidth, setConvWidth] = React.useState(() => getConvWidth())
+			// 标准模式下 748px 的等效百分比（随窗口尺寸实时计算，仅用于滑块定位）
+			const [stdPct, setStdPct] = React.useState(null)
+			React.useEffect(() => {
+				if (convWidth !== "standard") return
+				const measure = () => {
+					const el = document.querySelector("[data-conversation-scroll]")
+					if (!el) return
+					const cs = getComputedStyle(el)
+					const content = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
+					if (content > 0) setStdPct(Math.min(95, Math.max(40, Math.round((748 / content) * 100))))
+				}
+				measure()
+				window.addEventListener("resize", measure)
+				return () => window.removeEventListener("resize", measure)
+			}, [convWidth])
+
+			const setConvWidthMode = (v) => setConvWidth(applyConvWidth(v))
+			const stdLabel = stdPct !== null ? `标准 (748px ≈ 当前宽度的 ${stdPct}%)` : "标准 (748px)"
+			const convWidthLabel = convWidth === "standard" ? stdLabel
+				: convWidth === "full" ? "全宽 (90%)"
+				: `自定义 (${convWidth}%)`
+			// 滑块位置：全宽=90、自定义=NN、标准=748px 的实时等效百分比
+			const sliderValue = convWidth === "full" ? 90
+				: convWidth === "standard" ? (stdPct ?? 46)
+				: Number.parseInt(convWidth, 10)
+			const presetBtn = (mode, text) => React.createElement("button", {
+				style: {
+					border: "1px solid " + (convWidth === mode ? BRAND : "var(--dsw-alias-color-border-default, #d0d5de)"),
+					borderRadius: "6px", padding: "6px 14px", background: "transparent",
+					fontSize: "12px", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
+					color: convWidth === mode ? BRAND : "var(--dsw-alias-text-color-text-1, #1f2329)",
+				},
+				onClick: () => setConvWidthMode(mode),
+			}, text)
+
 			const rows = [
 				{
 					title: "开机自启", sub: "登录系统后自动启动",
@@ -118,6 +200,33 @@ window.__ModuleLoader__.load({
 							React.createElement("div", { style: subStyle }, r.sub),
 						),
 						r.control,
+					),
+				),
+
+				// 会话区域宽度
+				React.createElement("div", { style: rowStyle },
+					React.createElement("div", { style: { minWidth: 0 } },
+						React.createElement("div", { style: labelStyle }, "会话区域宽度"),
+						React.createElement("div", { style: subStyle },
+							"调节对话消息列宽度；与侧边栏插件兼容，边栏开合时自适应",
+						),
+						React.createElement("div", { style: subStyle },
+							`当前：${convWidthLabel}`,
+						),
+						React.createElement("input", {
+							type: "range", min: 40, max: 95, step: 1,
+							value: sliderValue,
+							onChange: (e) => setConvWidthMode(e.target.value),
+							style: { width: "100%", marginTop: "8px", accentColor: BRAND, cursor: "pointer" },
+						}),
+						convWidth === "standard"
+							? React.createElement("div", { style: subStyle },
+								"标准保持原有策略：宽屏时固定 748px 居中，窗口变窄时自动撑满；拖动滑块切换为按百分比固定")
+							: null,
+					),
+					React.createElement("div", { style: { display: "flex", gap: "8px", alignItems: "center" } },
+						presetBtn("standard", "标准 (748px)"),
+						presetBtn("full", "全宽 (90%)"),
 					),
 				),
 
