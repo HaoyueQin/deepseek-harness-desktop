@@ -17,3 +17,4 @@ build/icon.icns
 .zcode/
 .reasonix/
 pnpm-lock.yaml
+docs/
