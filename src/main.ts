@@ -78,7 +78,8 @@ function registerAppIpc(): void {
     setLaunchMinimized(enabled)
   })
   ipcMain.handle('dsh-app:get-info', () => ({
-    appVersion: app.getVersion(),
+    // dev 下带 -dev 后缀，与打包版一眼区分
+    appVersion: app.isPackaged ? app.getVersion() : app.getVersion() + '-dev',
     dshVersion: readDshVersion(),
     dshHome: dshHomeDir(),
     logDir: join(app.getPath('userData'), 'logs'),
