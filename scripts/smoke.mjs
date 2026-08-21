@@ -9,12 +9,9 @@
  */
 
 import { spawn, spawnSync } from 'node:child_process'
-import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { existsSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-
-const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 // 与 src/dsh-locator.ts 同逻辑：PATH 验证 + npm root -g 推导 bin.js
 function locateDsh() {

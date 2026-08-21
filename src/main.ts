@@ -17,7 +17,7 @@ import {
   checkBackendUpdate, initBackendUpdater,
   onBackendUpdateStatus, setBackendRestartHandler, updateBackend,
 } from './dsh-updater.js'
-import { locateDsh, type LocatedDsh } from './dsh-locator.js'
+import { locateDsh, compareVersions, type LocatedDsh } from './dsh-locator.js'
 // electron-updater 的 update-downloaded 事件带 downloadedFile（本地完整路径），
 // UpdateInfo.path 只是 latest.yml 里的相对文件名，spawn 会 ENOENT。
 import type { UpdateDownloadedEvent } from 'electron-updater'
@@ -92,7 +92,7 @@ function registerAppIpc(): void {
   })
   // checkForUpdates 接 electron-updater 真实实现（win/linux；mac 返回 current）
   ipcMain.handle('dsh-update:check', () => runUpdateCheck())
-  // 后端（内置 dsh 运行时）版本检测与一键更新
+  // 后端（用户已装的 dsh CLI）版本检测与一键升级
   ipcMain.handle('dsh-backend:check', () => checkBackendUpdate())
   ipcMain.handle('dsh-backend:update', () => updateBackend())
 }
@@ -134,16 +134,16 @@ const SETUP_HTML = `<!doctype html>
   <p>桌面壳直接复用你已安装的 dsh 命令行工具——插件、设置、会话与终端完全共享。</p>
   <p>请先安装 dsh（需要 Node.js ≥ 22）：</p>
   <div class="cmd"><code id="cmd">npm i -g @deepseek-ai/dsh</code>
-    <button class="ghost" onclick="copyCmd()">复制</button></div>
+    <button class="ghost" onclick="copyCmd(this)">复制</button></div>
   <button id="installBtn" onclick="install()">一键安装</button>
   <button class="ghost" onclick="recheck()">我已安装，重新检测</button>
   <pre id="log"></pre>
 </div>
 <script>
   function bridge() { return window.dshDesktop && window.dshDesktop.setup }
-  function copyCmd() {
+  function copyCmd(btn) {
     bridge().copyCommand().then(() => {
-      const b = event.target; b.textContent = '已复制'; setTimeout(() => { b.textContent = '复制' }, 1500)
+      btn.textContent = '已复制'; setTimeout(() => { btn.textContent = '复制' }, 1500)
     })
   }
   function install() {
@@ -175,16 +175,19 @@ function showWindow(): void {
 
 /**
  * spawn dsh 后端并等待就绪后加载到窗口。供启动、引导安装完成与后端
- * 一键更新后的重启共用。调用方负责 try/catch（失败时停掉 dsh 防孤儿进程）。
+ * 一键升级后的重启共用。调用方负责 try/catch（失败时停掉 dsh 防孤儿进程）。
  */
-async function startDshAndLoad(binJs: string): Promise<void> {
-  log(`spawn dsh: node=node bin=${binJs} DSH_HOME=${dshHomeDir()}`)
+async function startDshAndLoad(located: LocatedDsh): Promise<void> {
+  // --no-open 仅 dsh ≥0.1.0-rc.8 认识；低版本省略（退化为可能弹一次浏览器）
+  const noOpen = compareVersions(located.version, '0.1.0-rc.8') >= 0
+  log(`spawn dsh: node=node bin=${located.binJs} version=${located.version} noOpen=${noOpen} DSH_HOME=${dshHomeDir()}`)
   ensureDesktopPlugin(dshHomeDir())
   dsh = startDsh({
     nodePath: 'node',
-    dshBin: binJs,
+    dshBin: located.binJs,
     dshHome: dshHomeDir(),
     onLog: log,
+    noOpen,
   })
 
   dsh.exited.then(({ expected, code, signal }) => {
@@ -213,7 +216,7 @@ async function bootWithLocatedDsh(): Promise<'ok' | 'not-found' | 'failed'> {
   if (locatedDsh === null) return 'not-found'
   initBackendUpdater(locatedDsh.version)
   try {
-    await startDshAndLoad(locatedDsh.binJs)
+    await startDshAndLoad(locatedDsh)
     return 'ok'
   } catch (err) {
     log(`dsh 启动失败: ${String(err)}`)
@@ -229,12 +232,16 @@ async function bootWithLocatedDsh(): Promise<'ok' | 'not-found' | 'failed'> {
 }
 
 /** 引导安装 IPC：复制命令 / 壳内一键安装 / 重新检测。 */
+let setupInstalling = false // 安装进行中标志：挡住并发 install 与半安装态的 recheck
+
 function registerSetupIpc(): void {
   ipcMain.handle('dsh-setup:copy-command', () => {
     clipboard.writeText('npm i -g @deepseek-ai/dsh')
     return true
   })
   ipcMain.handle('dsh-setup:install', () => {
+    if (setupInstalling) return true // 幂等：已在安装中
+    setupInstalling = true
     const child = spawn('npm', ['i', '-g', '@deepseek-ai/dsh'], {
       windowsHide: true,
       shell: process.platform === 'win32',
@@ -243,6 +250,7 @@ function registerSetupIpc(): void {
     child.stdout?.on('data', (d: Buffer) => push(d.toString()))
     child.stderr?.on('data', (d: Buffer) => push(d.toString()))
     child.on('exit', async (code) => {
+      setupInstalling = false
       if (quitting) return
       win?.webContents.send('dsh-setup:install-exit', code)
       if (code === 0) {
@@ -255,7 +263,11 @@ function registerSetupIpc(): void {
     })
     return true
   })
-  ipcMain.handle('dsh-setup:recheck', async () => ({ ok: await bootWithLocatedDsh() === 'ok' }))
+  ipcMain.handle('dsh-setup:recheck', async () => {
+    // 安装进行中 bin.js 可能已落盘但依赖树不完整，此时启动必然失败——拒绝并提示稍候
+    if (setupInstalling) return { ok: false, busy: true }
+    return { ok: await bootWithLocatedDsh() === 'ok' }
+  })
 }
 
 /**
@@ -434,7 +446,7 @@ function main(): void {
       if (dsh !== null) { await dsh.stop(); dsh = null }
       if (!quitting && locatedDsh !== null) {
         win?.webContents.send('dsh-backend:update-status', { stage: 'restarting', message: '正在重启后端…' })
-        await startDshAndLoad(locatedDsh.binJs)
+        await startDshAndLoad(locatedDsh)
       }
     })
 

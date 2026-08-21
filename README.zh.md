@@ -11,13 +11,15 @@
 [![Issues](https://img.shields.io/github/issues/HaoyueQin/deepseek-harness-desktop?style=flat-square)](https://github.com/HaoyueQin/deepseek-harness-desktop/issues)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-4176e6?style=flat-square)]()
 
-为 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DeepSeek 开源的可插拔 AI Agent harness）打造的桌面应用壳，把官方 `dsh web` 界面包装成原生质感、常驻后台的桌面应用。
+为 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DeepSeek 开源的可插拔 AI Agent harness）打造的桌面应用壳，把官方 `dsh web` 界面包装成原生质感、常驻后台的桌面应用，**直接复用你已安装的 `dsh` 命令行工具**。
 
 [English](README.md) | 简体中文
 
 ## 特性
 
-- **零侵入包装** — 以子进程方式运行 `dsh web`（内置 Node 24 + `@deepseek-ai/dsh`），加载其 localhost 界面；harness 源码零改动，升级只需换版本号
+- **零侵入包装** — 以子进程方式运行你全局安装的 dsh CLI（`node <dsh>/lib/bin.js web`），加载其 localhost 界面；harness 源码零改动。终端与桌面端共用同一份 dsh——插件、设置、版本永远一致
+- **应用内更新后端** — 设置 → 桌面显示当前 dsh 版本；一键检查 npm 最新版并升级，无需碰命令行
+- **首次启动引导安装** — 未检测到 dsh？应用提供可复制的安装命令或壳内一键安装，装完自动进入
 - **无边框沉浸窗口** — 无原生标题栏；自绘窗口控制按钮（最小化/最大化/关闭）以 DeepSeek 品牌蓝 hover 融入页面，并随明暗主题切换
 - **托盘常驻** — 关闭窗口隐藏到系统托盘而非退出，后端持续运行，随时秒开
 - **开机自启** — 托盘菜单一键开关（Windows/macOS 原生实现；Linux 走 XDG autostart）
@@ -42,9 +44,13 @@
 | macOS | `.dmg`（Apple Silicon / Intel） | 未签名 — 首次运行需右键 → 打开 |
 | Linux | `.AppImage` + `.deb` | x64 |
 
+### 前置条件
+
+- **Node.js ≥ 22** 与 dsh CLI（`npm i -g @deepseek-ai/dsh`）——若未安装，应用会显示引导页，提供可复制命令或壳内一键安装
+
 ### 首次启动
 
-1. 启动应用 — 内置的 `dsh web` 服务在后台启动，界面就绪后自动打开
+1. 启动应用 — 自动定位你的 dsh CLI，后台启动 `dsh web` 服务，界面就绪后自动打开（未装 dsh 会先进入引导安装页）
 2. 关闭「预览版」提示
 3. 打开 **设置 → 模型** 配置你的 LLM 供应商（API Key、模型、Base URL），与 Web 版一致
 4. 选择一个工作区，开始对话
@@ -59,7 +65,7 @@
 
 ```sh
 npm install        # 安装 electron 43 及工具链
-npm run dev        # dev 模式：系统 Node + 本地 node_modules 的 dsh
+npm run dev        # dev 模式：系统 Node + 你全局安装的 dsh CLI
 ```
 
 > **electron 二进制下载卡住？**（一直显示 `Downloading Electron binary...`）
@@ -74,8 +80,7 @@ npm run dev        # dev 模式：系统 Node + 本地 node_modules 的 dsh
 ## 打包
 
 ```sh
-npm run build:runtime     # 生成 resources/：内置 Node 24 LTS + dsh 依赖树 + 图标
-                          # 网络不佳时：HTTPS_PROXY=http://127.0.0.1:8897 npm run build:runtime
+npm run build:runtime     # 从上游 favicon 生成 resources/icon.png（+ build/icon.png）
 npm run dist:win          # Windows NSIS 安装包 → release/
 # npm run dist:mac        # macOS dmg（需 macOS 环境；CI 负责构建）
 # npm run dist:linux      # Linux AppImage + deb
@@ -87,14 +92,16 @@ CI 工作流（`.github/workflows/release.yml`）在每个 `v*` tag 上构建全
 
 - **数据**（`DSH_HOME`）：默认 `~/.dsh`（尊重 `$DSH_HOME` 环境变量）— profile、会话、存储
 - **日志**：`<userData>/logs/main.log`
-- **内置运行时**：`<安装目录>/resources/resources/` — Node（`runtime/node/`）+ dsh（`dsh/node_modules/`）
+- **dsh CLI**：壳运行你全局安装的 `dsh`（通过 PATH + `npm root -g` 定位）；可在设置 → 桌面一键升级，或 `npm i -g @deepseek-ai/dsh`
 
 ## 项目结构
 
 ```
 src/
   main.ts          应用生命周期：单实例锁、窗口、托盘、dsh 编排
-  paths.ts         dev/prod 资源路径解析（内置 dsh、Node、preload、patch）
+  paths.ts         dev/prod 资源路径解析（图标、preload、桌面插件 patch）
+  dsh-locator.ts   定位用户已装的 dsh CLI（PATH 验证 + npm root -g）+ semver 比较
+  dsh-updater.ts   设置页后端卡片：检查 npm 最新版 / 一键 npm i -g 升级
   settings.ts      壳设置（userData/settings.json — 启动最小化）
   updater.ts       electron-updater（Windows 引导 / Linux AppImage 全自动）
   dsh/spawn.ts     spawn dsh web --port 0 --patch，解析 stdout URL 行，优雅停止
@@ -114,9 +121,8 @@ assets/
 
 ## 已知限制（v1）
 
-- 安装包约 150MB+（内置 Node + dsh 完整依赖树），体积裁剪在路线图上
+- 需要 Node.js ≥ 22 与全局安装的 dsh CLI（引导页提供一键安装）；壳不再内置运行时——安装包很小，但 dsh 本身必须存在
 - macOS 构建未签名 — Gatekeeper 首次运行需右键 → 打开；macOS 暂不支持自动更新（需签名证书）
-- dsh 处于 developer preview，迭代快速；壳锁定 `@deepseek-ai/dsh` 版本，升级需重新打包验证
 - Windows 自动更新为引导模式（下载后运行安装包）而非静默安装，源于未签名构建
 
 ## 反馈

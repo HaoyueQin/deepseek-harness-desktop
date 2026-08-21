@@ -38,3 +38,41 @@ export function locateDsh(): LocatedDsh | null {
   if (!existsSync(binJs)) return null
   return { version: ver.out, binJs }
 }
+
+/**
+ * 比较 semver 版本（含 prerelease，如 "0.1.1-rc.1"）。
+ * @returns a>b 为 1，a<b 为 -1，相等为 0。
+ * 规则：逐段数字比较；无 prerelease 高于有 prerelease；prerelease 按 "."
+ * 分段比较，纯数字段按数值、否则按字典序。
+ */
+export function compareVersions(a: string, b: string): number {
+  const parse = (v: string): { nums: number[]; pre: string[] | null } => {
+    const [core, pre] = v.split('-', 2)
+    return {
+      nums: core.split('.').map((n) => Number.parseInt(n, 10) || 0),
+      pre: pre === undefined ? null : pre.split('.'),
+    }
+  }
+  const pa = parse(a)
+  const pb = parse(b)
+  for (let i = 0; i < Math.max(pa.nums.length, pb.nums.length); i++) {
+    const d = (pa.nums[i] ?? 0) - (pb.nums[i] ?? 0)
+    if (d !== 0) return d > 0 ? 1 : -1
+  }
+  if (pa.pre === null && pb.pre === null) return 0
+  if (pa.pre === null) return 1
+  if (pb.pre === null) return -1
+  for (let i = 0; i < Math.max(pa.pre.length, pb.pre.length); i++) {
+    const x = pa.pre[i]
+    const y = pb.pre[i]
+    if (x === undefined) return -1
+    if (y === undefined) return 1
+    if (/^\d+$/.test(x) && /^\d+$/.test(y)) {
+      const d = Number(x) - Number(y)
+      if (d !== 0) return d > 0 ? 1 : -1
+    } else if (x !== y) {
+      return x < y ? -1 : 1
+    }
+  }
+  return 0
+}

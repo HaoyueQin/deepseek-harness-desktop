@@ -22,6 +22,11 @@ export interface StartDshOptions {
   onLog: (line: string) => void
   /** 从 spawn 到 HTTP ready 的总超时。首启 profile 初始化较慢，默认 60s。 */
   readyTimeoutMs?: number
+  /**
+   * 传 --no-open 关闭 dsh ≥0.1.0-rc.8 的默认浏览器行为。
+   * 低版本不认识该 flag 会启动报错，调用方须按版本判断后决定。
+   */
+  noOpen?: boolean
 }
 
 export interface DshControl {
@@ -34,7 +39,7 @@ export interface DshControl {
 }
 
 export function startDsh(options: StartDshOptions): DshControl {
-  const { nodePath, dshBin, dshHome, onLog, readyTimeoutMs = 60_000 } = options
+  const { nodePath, dshBin, dshHome, onLog, readyTimeoutMs = 60_000, noOpen = false } = options
 
   // 桌面集成插件 patch（存在则挂载设置页「桌面」分区）。
   // 顺序关键：--patch 是 launcher（web 子命令）的 option，必须位于透传参数
@@ -46,7 +51,7 @@ export function startDsh(options: StartDshOptions): DshControl {
   // --no-open（dsh 0.1.0-rc.8+ 的 web 透传 flag）：dsh web 默认会用系统
   // 浏览器打开就绪地址，桌面端自带窗口，必须关掉，否则每次启动都多弹
   // 一个浏览器标签。放透传区（--port 0 之后），不影响 stdout URL 就绪行。
-  const child = spawn(nodePath, [dshBin, 'web', ...patchArgs, '--port', '0', '--no-open'], {
+  const child = spawn(nodePath, [dshBin, 'web', ...patchArgs, '--port', '0', ...(noOpen ? ['--no-open'] : [])], {
     env: { ...process.env, DSH_HOME: dshHome },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
