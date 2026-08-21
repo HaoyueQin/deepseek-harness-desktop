@@ -33,6 +33,10 @@ jobs:
             npm-arch: x64
             eb-arch: x64
     runs-on: ${{ matrix.os }}
+    env:
+      # npm install 解析 dsh 大依赖树（3000+ 包）时默认 V8 堆不够，
+      # macOS runner 上 OOM（Abort trap 6）；放大到 8GB。
+      NODE_OPTIONS: --max-old-space-size=8192
     steps:
       - uses: actions/checkout@v4
 
