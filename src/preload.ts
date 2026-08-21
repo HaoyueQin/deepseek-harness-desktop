@@ -33,4 +33,15 @@ contextBridge.exposeInMainWorld('dshDesktop', {
       ipcRenderer.on('dsh-backend:update-status', (_event, s: unknown) => cb(s))
     },
   },
+  setup: {
+    copyCommand: (): Promise<boolean> => ipcRenderer.invoke('dsh-setup:copy-command'),
+    install: (): Promise<boolean> => ipcRenderer.invoke('dsh-setup:install'),
+    onOutput: (cb: (t: string) => void): void => {
+      ipcRenderer.on('dsh-setup:install-output', (_event, t: string) => cb(t))
+    },
+    onExit: (cb: (code: number | null) => void): void => {
+      ipcRenderer.on('dsh-setup:install-exit', (_event, code: number | null) => cb(code))
+    },
+    recheck: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('dsh-setup:recheck'),
+  },
 })

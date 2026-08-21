@@ -6,22 +6,23 @@
  * 自家子进程 stdout 解析，无外部输入进入 webPreferences。
  */
 
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell } from 'electron'
 import { startDsh, type DshControl } from './dsh/spawn.js'
 import { createTray, syncTrayAutostart, type TrayHandlers } from './tray.js'
-import { dshBinScript, dshHomeDir, iconPath, nodeExecutable, preloadPath, resourcesDir } from './paths.js'
+import { dshHomeDir, iconPath, preloadPath, resourcesDir } from './paths.js'
 import { getLaunchMinimized, setLaunchMinimized } from './settings.js'
 import { isAutostartEnabled, setAutostart } from './autostart.js'
 import { initUpdater, checkForUpdates as runUpdateCheck, setRunInstaller } from './updater.js'
 import {
-  checkBackendUpdate, initBackendUpdater, isDevBackend,
+  checkBackendUpdate, initBackendUpdater,
   onBackendUpdateStatus, setBackendRestartHandler, updateBackend,
 } from './dsh-updater.js'
+import { locateDsh, type LocatedDsh } from './dsh-locator.js'
 // electron-updater 的 update-downloaded 事件带 downloadedFile（本地完整路径），
 // UpdateInfo.path 只是 latest.yml 里的相对文件名，spawn 会 ENOENT。
 import type { UpdateDownloadedEvent } from 'electron-updater'
 import { join } from 'node:path'
-import { copyFileSync, mkdirSync, readFileSync, renameSync } from 'node:fs'
+import { copyFileSync, mkdirSync, renameSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { desktopPluginDir } from './paths.js'
 import { log } from './log.js'
@@ -30,18 +31,14 @@ import { INJECT_TITLEBAR } from './titlebar.js'
 let win: BrowserWindow | null = null
 let dsh: DshControl | null = null
 let quitting = false
+/** 用户已装的 dsh（纯壳架构：壳不内置运行时，spawn 用户 PATH 里的 CLI）。 */
+let locatedDsh: LocatedDsh | null = null
 
 /**
- * 内置 dsh 运行时版本（resources/dsh/.dsh-version，install-runtime 写入）。
- * dev 未生成 resources 时返回 'dev'；读取失败（如旧包未带该文件）返回 'unknown'。
+ * 用户 dsh 版本（locateDsh 检测结果）。未检测到返回 'unknown'。
  */
 function readDshVersion(): string {
-  try {
-    const v = readFileSync(join(resourcesDir(), 'dsh', '.dsh-version'), 'utf8').trim()
-    return v === '' ? 'unknown' : v
-  } catch {
-    return app.isPackaged ? 'unknown' : 'dev'
-  }
+  return locatedDsh?.version ?? 'unknown'
 }
 
 // 网页级窗口控制（win/linux frameless 用）：preload 注入的控制条经 IPC 调用。
@@ -112,6 +109,63 @@ const LOADING_HTML = `<!doctype html>
 </style></head>
 <body><div class="box"><div class="spinner"></div>正在启动 DeepSeek Harness…</div></body></html>`
 
+/** 引导安装页：未检测到用户 dsh 时展示（纯壳架构，壳复用用户已装的 CLI）。 */
+const SETUP_HTML = `<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>需要安装 DeepSeek Harness CLI</title>
+<style>
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+         background: #1a1a1a; color: #e8e8e8; font: 14px/1.7 system-ui, sans-serif; }
+  .box { max-width: 560px; padding: 32px; }
+  h1 { font-size: 20px; margin: 0 0 12px; }
+  p { color: #aab3c0; margin: 8px 0; }
+  .cmd { display: flex; gap: 8px; align-items: center; background: #111;
+         border: 1px solid #333; border-radius: 8px; padding: 10px 14px; margin: 16px 0; }
+  code { color: #4d9fff; font-family: Consolas, monospace; flex: 1; }
+  button { border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer;
+           font-size: 13px; background: #4176E6; color: #fff; }
+  button.ghost { background: transparent; border: 1px solid #444; color: #e8e8e8; }
+  button:disabled { opacity: .5; cursor: default; }
+  pre { background: #111; border: 1px solid #333; border-radius: 8px; padding: 12px;
+        max-height: 200px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
+        font-size: 12px; color: #9aa4b2; display: none; text-align: left; }
+</style></head>
+<body><div class="box">
+  <h1>未检测到 DeepSeek Harness CLI（dsh）</h1>
+  <p>桌面壳直接复用你已安装的 dsh 命令行工具——插件、设置、会话与终端完全共享。</p>
+  <p>请先安装 dsh（需要 Node.js ≥ 22）：</p>
+  <div class="cmd"><code id="cmd">npm i -g @deepseek-ai/dsh</code>
+    <button class="ghost" onclick="copyCmd()">复制</button></div>
+  <button id="installBtn" onclick="install()">一键安装</button>
+  <button class="ghost" onclick="recheck()">我已安装，重新检测</button>
+  <pre id="log"></pre>
+</div>
+<script>
+  function bridge() { return window.dshDesktop && window.dshDesktop.setup }
+  function copyCmd() {
+    bridge().copyCommand().then(() => {
+      const b = event.target; b.textContent = '已复制'; setTimeout(() => { b.textContent = '复制' }, 1500)
+    })
+  }
+  function install() {
+    document.getElementById('installBtn').disabled = true
+    const log = document.getElementById('log'); log.style.display = 'block'
+    bridge().onOutput((t) => { log.textContent += t; log.scrollTop = log.scrollHeight })
+    bridge().onExit((code) => {
+      if (code === 0) log.textContent += '\\n✓ 安装完成，正在启动…'
+      else {
+        log.textContent += '\\n✗ 安装失败（退出码 ' + code + '）。请检查网络后重试，或手动安装后点「重新检测」'
+        document.getElementById('installBtn').disabled = false
+      }
+    })
+    bridge().install()
+  }
+  function recheck() {
+    bridge().recheck().then((r) => {
+      if (!r.ok) alert('仍未检测到可用的 dsh。请确认安装成功后重试。')
+    })
+  }
+</script></body></html>`
+
 function showWindow(): void {
   if (win === null) return
   if (win.isMinimized()) win.restore()
@@ -120,15 +174,15 @@ function showWindow(): void {
 }
 
 /**
- * spawn dsh 后端并等待就绪后加载到窗口。供启动与后端一键更新后的重启共用。
- * 调用方负责 try/catch（失败时停掉 dsh 防孤儿进程）。
+ * spawn dsh 后端并等待就绪后加载到窗口。供启动、引导安装完成与后端
+ * 一键更新后的重启共用。调用方负责 try/catch（失败时停掉 dsh 防孤儿进程）。
  */
-async function startDshAndLoad(): Promise<void> {
-  log(`spawn dsh: node=${nodeExecutable()} bin=${dshBinScript()} DSH_HOME=${dshHomeDir()}`)
+async function startDshAndLoad(binJs: string): Promise<void> {
+  log(`spawn dsh: node=node bin=${binJs} DSH_HOME=${dshHomeDir()}`)
   ensureDesktopPlugin(dshHomeDir())
   dsh = startDsh({
-    nodePath: nodeExecutable(),
-    dshBin: dshBinScript(),
+    nodePath: 'node',
+    dshBin: binJs,
     dshHome: dshHomeDir(),
     onLog: log,
   })
@@ -148,6 +202,60 @@ async function startDshAndLoad(): Promise<void> {
   const url = await dsh.url
   log(`dsh 就绪: ${url}`)
   if (!quitting) await win?.loadURL(url)
+}
+
+/**
+ * 检测用户 dsh 并启动后端。
+ * @returns 'ok' 已启动；'not-found' 未检测到 dsh（调用方展示引导页）；'failed' 启动失败（已弹窗并退出）。
+ */
+async function bootWithLocatedDsh(): Promise<'ok' | 'not-found' | 'failed'> {
+  locatedDsh = locateDsh()
+  if (locatedDsh === null) return 'not-found'
+  initBackendUpdater(locatedDsh.version)
+  try {
+    await startDshAndLoad(locatedDsh.binJs)
+    return 'ok'
+  } catch (err) {
+    log(`dsh 启动失败: ${String(err)}`)
+    if (!quitting) {
+      // 失败时 dsh 可能已监听端口（仅 HTTP 探测失败），先停掉再退出，
+      // 防止 dsh 变孤儿进程常驻后台、占用 DSH_HOME 文件锁
+      if (dsh !== null) await dsh.stop()
+      await dialog.showErrorBox('DeepSeek Harness 启动失败', String(err))
+      app.quit()
+    }
+    return 'failed'
+  }
+}
+
+/** 引导安装 IPC：复制命令 / 壳内一键安装 / 重新检测。 */
+function registerSetupIpc(): void {
+  ipcMain.handle('dsh-setup:copy-command', () => {
+    clipboard.writeText('npm i -g @deepseek-ai/dsh')
+    return true
+  })
+  ipcMain.handle('dsh-setup:install', () => {
+    const child = spawn('npm', ['i', '-g', '@deepseek-ai/dsh'], {
+      windowsHide: true,
+      shell: process.platform === 'win32',
+    })
+    const push = (t: string): void => { if (!quitting) win?.webContents.send('dsh-setup:install-output', t) }
+    child.stdout?.on('data', (d: Buffer) => push(d.toString()))
+    child.stderr?.on('data', (d: Buffer) => push(d.toString()))
+    child.on('exit', async (code) => {
+      if (quitting) return
+      win?.webContents.send('dsh-setup:install-exit', code)
+      if (code === 0) {
+        // 装完自动重新检测并进入；仍找不到时让用户手动「重新检测」排查
+        const r = await bootWithLocatedDsh()
+        if (r === 'not-found') {
+          push('\r\n[shell] 安装已完成但未检测到 dsh，请点「我已安装，重新检测」重试\r\n')
+        }
+      }
+    })
+    return true
+  })
+  ipcMain.handle('dsh-setup:recheck', async () => ({ ok: await bootWithLocatedDsh() === 'ok' }))
 }
 
 /**
@@ -309,6 +417,7 @@ function main(): void {
     }
     registerWindowControls()
     registerAppIpc()
+    registerSetupIpc()
     const trayHandlers: TrayHandlers = { show: showWindow, quit: () => void quitApp() }
     createTray(iconPath(), trayHandlers)
 
@@ -319,27 +428,22 @@ function main(): void {
     await win?.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(LOADING_HTML)}`)
     if (quitting) return
 
-    initBackendUpdater()
     onBackendUpdateStatus((s) => { win?.webContents.send('dsh-backend:update-status', s) })
     setBackendRestartHandler(async () => {
       // 停旧 dsh → 重启 → 窗口重载
       if (dsh !== null) { await dsh.stop(); dsh = null }
-      if (!quitting) {
+      if (!quitting && locatedDsh !== null) {
         win?.webContents.send('dsh-backend:update-status', { stage: 'restarting', message: '正在重启后端…' })
-        await startDshAndLoad()
+        await startDshAndLoad(locatedDsh.binJs)
       }
     })
 
-    try {
-      await startDshAndLoad()
-    } catch (err) {
-      log(`dsh 启动失败: ${String(err)}`)
+    const booted = await bootWithLocatedDsh()
+    if (booted === 'not-found') {
+      // 未装 dsh：展示引导安装页，后续由 setup IPC 驱动进入
       if (!quitting) {
-        // 失败时 dsh 可能已监听端口（仅 HTTP 探测失败），先停掉再退出，
-        // 防止 dsh 变孤儿进程常驻后台、占用 DSH_HOME 文件锁
-        if (dsh !== null) await dsh.stop()
-        await dialog.showErrorBox('DeepSeek Harness 启动失败', String(err))
-        app.quit()
+        showWindow()
+        await win?.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(SETUP_HTML)}`)
       }
     }
   })

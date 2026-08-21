@@ -16,27 +16,19 @@ jobs:
         include:
           - os: windows-latest
             node-arch: win-x64
-            npm-arch: x64
             eb-arch: x64
           # macos-13（Intel runner）已从公共仓库退役；macOS 两个架构都由
           # macos-14（arm64）构建：arm64 原生 + x64 交叉构建
           - os: macos-14
             node-arch: darwin-arm64
-            npm-arch: arm64
             eb-arch: arm64
           - os: macos-14
             node-arch: darwin-x64
-            npm-arch: x64
             eb-arch: x64
           - os: ubuntu-latest
             node-arch: linux-x64
-            npm-arch: x64
             eb-arch: x64
     runs-on: ${{ matrix.os }}
-    env:
-      # npm install 解析 dsh 大依赖树（3000+ 包）时默认 V8 堆不够，
-      # macOS runner 上 OOM（Abort trap 6）；放大到 8GB。
-      NODE_OPTIONS: --max-old-space-size=8192
     steps:
       - uses: actions/checkout@v4
 
@@ -61,21 +53,22 @@ jobs:
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
           ELECTRON_BUILDER_BINARIES_MIRROR: https://npmmirror.com/mirrors/electron-builder-binaries/
 
-      - name: Build runtime (Node + dsh + icons)
+      # 纯壳架构：dsh 运行时不内置；smoke 用 runner 上全局安装的 dsh
+      - name: Install dsh CLI (for smoke)
+        run: npm i -g @deepseek-ai/dsh
+
+      - name: Install icon
         run: npm run build:runtime
         env:
           DSH_ICON_SVG: ${{ github.workspace }}/build/favicon-source.svg
-          npm_config_registry: https://registry.npmmirror.com
-          # 交叉构建（macos-14 arm64 → x64）：让 npm 安装目标架构的原生模块 prebuilt
-          npm_config_arch: ${{ matrix.npm-arch }}
 
       - name: Build app (tsc)
         run: npm run build
 
-      # 无 GUI 冒烟：用内置 Node + resources/dsh 验证 dsh web 启动（Linux CI
-      # 无显示服务器，跳过 GUI 验证；web 进程无需 X）
+      # 无 GUI 冒烟：验证 dsh web 启动与端口发现链路（Linux CI 无显示服务器，
+      # 跳过 GUI 验证；web 进程无需 X）
       - name: Smoke test (headless)
-        run: node scripts/smoke.mjs --runtime
+        run: node scripts/smoke.mjs
 
       - name: Package (electron-builder)
         run: npx electron-builder --publish never --${{ matrix.eb-arch }}
