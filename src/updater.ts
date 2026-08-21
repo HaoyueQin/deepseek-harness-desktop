@@ -21,6 +21,8 @@ export interface UpdateStatus {
   downloaded: boolean
   /** macOS 不支持自动更新（需签名）：与「无更新」区分，避免 UI 误导为最新版。 */
   unsupported?: boolean
+  /** dev（未打包）模式：electron-updater 无更新上下文，自更新不可用。 */
+  devMode?: boolean
 }
 
 let current: UpdateStatus = { current: app.getVersion(), latest: null, downloading: false, downloaded: false }
@@ -112,6 +114,8 @@ export function initUpdater(): void {
 }
 
 export async function checkForUpdates(): Promise<UpdateStatus> {
+  // dev（未打包）无更新上下文：electron-updater 会直接跳过检查，提前返回避免误导
+  if (!app.isPackaged) return { ...current, devMode: true }
   if (process.platform !== 'win32' && process.platform !== 'linux') {
     // macOS 无签名证书不支持自动更新：显式标记 unsupported，
     // 与「无更新」区分，UI 显示提示而非误导为最新版

@@ -101,7 +101,7 @@ window.__ModuleLoader__.load({
 			const [autostart, setAutostart] = React.useState(false)
 			const [launchMin, setLaunchMin] = React.useState(false)
 			const [info, setInfo] = React.useState(null)
-			const [update, setUpdate] = React.useState({ checking: false, unsupported: false, latest: null })
+			const [update, setUpdate] = React.useState({ checking: false, unsupported: false, latest: null, devMode: false })
 
 			React.useEffect(() => {
 				if (!desktop) return
@@ -118,7 +118,7 @@ window.__ModuleLoader__.load({
 			const check = () => {
 				setUpdate((u) => ({ ...u, checking: true }))
 				desktop.checkForUpdates()
-					.then((r) => setUpdate({ checking: false, unsupported: r.unsupported, latest: r.latest }))
+					.then((r) => setUpdate({ checking: false, unsupported: r.unsupported, latest: r.latest, devMode: r.devMode }))
 					.catch(() => setUpdate({ checking: false, unsupported: false, latest: null }))
 			}
 
@@ -292,12 +292,17 @@ window.__ModuleLoader__.load({
 						),
 						React.createElement("div", { style: subStyle },
 							update.checking ? "检查中…"
+								: update.devMode ? "开发模式不支持自更新（打包版可用）"
 								: update.unsupported ? "macOS 暂不支持（需签名证书），请从 Release 页下载"
 								: update.latest ? `当前 ${info ? info.appVersion : "…"} → 发现新版 ${update.latest}`
 								: `当前 ${info ? info.appVersion : "…"}`,
 						),
 					),
-					React.createElement("button", { style: ghostBtn, onClick: check, disabled: update.checking || update.unsupported },
+					React.createElement("button", {
+						style: ghostBtn,
+						onClick: check,
+						disabled: update.checking || update.unsupported || update.devMode,
+					},
 						update.checking ? "检查中" : "检查更新",
 					),
 				),
