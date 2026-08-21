@@ -131,6 +131,25 @@ async function installNode() {
   console.log(`[install-runtime] Node ${version} 就绪 → ${target}`)
 }
 
+/**
+ * 交叉构建（如 arm64 runner 出 x64 包）时，npm 按 process.arch 安装 sharp 的
+ * optional 平台二进制，目标架构的二进制根本不存在；cleanNativePlatforms 又只
+ * 保留目标架构目录 → 运行时加载失败（"Could not load sharp using the
+ * darwin-x64 runtime"）。此处显式按目标 os/cpu 补装后再清理。
+ */
+async function ensureTargetSharpBinaries(dshDir) {
+  if (process.arch === targetArch) return
+  const osFlag = { win32: 'win32', darwin: 'darwin', linux: 'linux' }[process.platform]
+  console.log(`[install-runtime] 交叉构建(${process.arch}→${targetArch})：补装 sharp ${osFlag}-${targetArch} 二进制`)
+  await new Promise((resolve, reject) => {
+    const child = spawn('npm', ['install', '--no-save', '--no-package-lock', '--no-audit', '--no-fund',
+      `--os=${osFlag}`, `--cpu=${targetArch}`, 'sharp'], {
+      cwd: dshDir, stdio: 'inherit', windowsHide: true, shell: process.platform === 'win32',
+    })
+    child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`sharp 目标架构补装退出码 ${String(code)}`))))
+  })
+}
+
 /** 平台清理：保留当前平台的 node-pty prebuild 与 sharp 二进制及其 libvips 运行时，删除其余（省 ~48M）。 */
 function cleanNativePlatforms(dshDir) {
   const ptyDir = join(dshDir, 'node_modules', 'node-pty', 'prebuilds')
@@ -246,7 +265,10 @@ await installNode()
 await installDsh()
 await installIcon()
 // 平台清理（幂等，独立于 npm install marker——已装好的依赖树直接清理，无需重装）
-if (existsSync(join(resources, 'dsh', 'node_modules'))) cleanNativePlatforms(join(resources, 'dsh'))
+if (existsSync(join(resources, 'dsh', 'node_modules'))) {
+  await ensureTargetSharpBinaries(join(resources, 'dsh'))
+  cleanNativePlatforms(join(resources, 'dsh'))
+}
 // 冗余清理（幂等，独立于 npm install marker）：每次 build:runtime 都会执行
 if (existsSync(join(resources, 'dsh', 'node_modules'))) trimDshTree(join(resources, 'dsh'))
 console.log('[install-runtime] 完成')
