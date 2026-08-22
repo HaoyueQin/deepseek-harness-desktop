@@ -91,8 +91,12 @@ function registerAppIpc(): void {
     degraded: dshPortDegraded,
   }))
   ipcMain.handle('dsh-settings:set-port-policy', (_event, v: unknown) => {
-    if (typeof v !== 'number' && typeof v !== 'string') {
-      log(`ipc: dsh-settings:set-port-policy 收到非法参数 ${typeof v}`)
+    // 拒绝非法值（对齐 set-launch-minimized 的拒绝+日志风格）；磁盘上的
+    // 历史脏数据仍由 normalizePortPolicy 在读取侧兜底归一。
+    const valid = v === 'random'
+      || (typeof v === 'number' && Number.isInteger(v) && v >= 1024 && v <= 65535)
+    if (!valid) {
+      log(`ipc: dsh-settings:set-port-policy 收到非法参数 ${typeof v}: ${String(v)}`)
       return
     }
     setPortPolicy(v)
@@ -198,6 +202,35 @@ function showWindow(): void {
  * spawn dsh 后端并等待就绪后加载到窗口。供启动、引导安装完成与后端
  * 一键升级后的重启共用。调用方负责 try/catch（失败时停掉 dsh 防孤儿进程）。
  */
+/**
+ * 单次 spawn 尝试。「意外退出」弹窗只在服务就绪后的崩溃时触发；启动期
+ * 失败（dsh.url reject，如端口被抢注的 EADDRINUSE）交还调用方重试。
+ */
+function spawnDshAttempt(located: LocatedDsh, noOpen: boolean, port: number | undefined): DshControl {
+  dsh = startDsh({
+    nodePath: 'node',
+    dshBin: located.binJs,
+    dshHome: dshHomeDir(),
+    onLog: log,
+    noOpen,
+    port,
+  })
+  let ready = false
+  void dsh.url.then(() => { ready = true }, () => { /* 启动期失败由调用方处理 */ })
+  dsh.exited.then(({ expected, code, signal }) => {
+    log(`dsh 进程退出: expected=${expected} code=${String(code)} signal=${String(signal)}`)
+    if (!expected && !quitting && ready) {
+      void dialog.showMessageBox({
+        type: 'error',
+        title: 'DeepSeek Harness 意外退出',
+        message: `后端进程意外退出（code=${String(code)}）。`,
+        buttons: ['退出'],
+      }).then(() => app.quit())
+    }
+  })
+  return dsh
+}
+
 async function startDshAndLoad(located: LocatedDsh): Promise<void> {
   // --no-open 仅 dsh ≥0.1.0-rc.8 认识；低版本省略（退化为可能弹一次浏览器）
   const noOpen = compareVersions(located.version, '0.1.0-rc.8') >= 0
@@ -212,28 +245,23 @@ async function startDshAndLoad(located: LocatedDsh): Promise<void> {
     log(`端口 ${policy} 被占用，本次降级随机端口（页面侧设置本次不保留）`)
   }
   ensureDesktopPlugin(dshHomeDir())
-  dsh = startDsh({
-    nodePath: 'node',
-    dshBin: located.binJs,
-    dshHome: dshHomeDir(),
-    onLog: log,
-    noOpen,
-    port,
-  })
 
-  dsh.exited.then(({ expected, code, signal }) => {
-    log(`dsh 进程退出: expected=${expected} code=${String(code)} signal=${String(signal)}`)
-    if (!expected && !quitting) {
-      void dialog.showMessageBox({
-        type: 'error',
-        title: 'DeepSeek Harness 意外退出',
-        message: `后端进程意外退出（code=${String(code)}）。`,
-        buttons: ['退出'],
-      }).then(() => app.quit())
-    }
-  })
-
-  const url = await dsh.url
+  let attempt = spawnDshAttempt(located, noOpen, port)
+  let url: string
+  try {
+    url = await attempt.url
+  } catch (err) {
+    // 启动期失败：探测通过但 spawn 即退出（TOCTOU，端口恰在亚秒窗口内被抢注）
+    // 或 HTTP 就绪探测超时。固定端口值得换随机重试一次；随机端口下重试同因
+    // 无意义。重试前停掉可能仍存活的旧进程，防孤儿；再失败抛给调用方走
+    // 「启动失败」路径。
+    if (port === undefined || quitting) throw err
+    log(`固定端口 ${port} 启动失败（${String(err)}），降级随机端口重试`)
+    dshPortDegraded = true
+    await attempt.stop()
+    attempt = spawnDshAttempt(located, noOpen, undefined)
+    url = await attempt.url
+  }
   log(`dsh 就绪: ${url}${dshPortDegraded ? '（降级随机）' : ''}`)
   const parsedPort = Number.parseInt(new URL(url).port, 10)
   dshPortActual = Number.isNaN(parsedPort) ? null : parsedPort
