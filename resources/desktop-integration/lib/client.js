@@ -102,13 +102,18 @@ window.__ModuleLoader__.load({
 			const [launchMin, setLaunchMin] = React.useState(false)
 			const [info, setInfo] = React.useState(null)
 			const [update, setUpdate] = React.useState({ checking: false, unsupported: false, latest: null, devMode: false })
+		// 监听端口策略：configured=配置值（重启生效）；actual/degraded=本次运行状态。
+		// portDraft=本次会话内已修改待重启的配置（覆盖显示）。
+		const [portInfo, setPortInfo] = React.useState(null)
+		const [portDraft, setPortDraft] = React.useState(null)
 
-			React.useEffect(() => {
-				if (!desktop) return
-				desktop.autostart.get().then(setAutostart).catch(() => {})
-				desktop.launchMinimized.get().then(setLaunchMin).catch(() => {})
-				desktop.getInfo().then(setInfo).catch(() => {})
-			}, [])
+		React.useEffect(() => {
+			if (!desktop) return
+			desktop.autostart.get().then(setAutostart).catch(() => {})
+			desktop.launchMinimized.get().then(setLaunchMin).catch(() => {})
+			desktop.getInfo().then(setInfo).catch(() => {})
+			if (desktop.portPolicy) desktop.portPolicy.get().then(setPortInfo).catch(() => {})
+		}, [])
 
 			if (!desktop) return null // 裸 dsh 降级：无桥则渲染空
 
@@ -143,6 +148,22 @@ window.__ModuleLoader__.load({
 				backend.update().then((r) => setBackendStatus((prev) => ({ ...prev, ...r }))).catch(() => {})
 			}
 
+			// 监听端口：固定端口 → 页面 origin 稳定，localStorage 侧的设置
+			// （会话宽度等）跨重启保留；随机 → 每次启动 origin 都变，全部丢。
+			const applyPortPolicy = (v) => {
+				if (!desktop.portPolicy) return // 旧壳桥上无此方法（混合态防崩）
+				desktop.portPolicy.set(v).catch(() => {})
+				setPortDraft(v)
+			}
+			const portConfigured = portDraft !== null ? portDraft
+				: portInfo ? portInfo.configured : null
+			const portMode = portConfigured === null ? null
+				: portConfigured === "random" ? "random"
+				: portConfigured === 3080 ? "default"
+				: "custom"
+			// 自定义入口端口：已在自定义模式则保持现值，否则从 3180 起步
+			const customPort = portMode === "custom" ? portConfigured : 3180
+
 			// 会话区域宽度：standard=上游默认 748px（max-width 封顶，窄窗自动撑满，
 			// 保持原有响应式策略）；full=90%；数字=自定义百分比
 			const [convWidth, setConvWidth] = React.useState(() => getConvWidth())
@@ -171,14 +192,15 @@ window.__ModuleLoader__.load({
 			const sliderValue = convWidth === "full" ? 90
 				: convWidth === "standard" ? (stdPct ?? 46)
 				: Number.parseInt(convWidth, 10)
-			const presetBtn = (mode, text) => React.createElement("button", {
+			// 分段按钮（预设选择通用件）：选中态品牌蓝描边
+			const segBtn = (active, onClick, text) => React.createElement("button", {
 				style: {
-					border: "1px solid " + (convWidth === mode ? BRAND : "var(--dsw-alias-border-l2, #d0d5de)"),
+					border: "1px solid " + (active ? BRAND : "var(--dsw-alias-border-l2, #d0d5de)"),
 					borderRadius: "6px", padding: "6px 14px", background: "transparent",
 					fontSize: "12px", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
-					color: convWidth === mode ? BRAND : "var(--dsw-alias-label-primary, #1f2329)",
+					color: active ? BRAND : "var(--dsw-alias-label-primary, #1f2329)",
 				},
-				onClick: () => setConvWidthMode(mode),
+				onClick,
 			}, text)
 
 			const rows = [
@@ -200,6 +222,88 @@ window.__ModuleLoader__.load({
 							React.createElement("div", { style: subStyle }, r.sub),
 						),
 						r.control,
+					),
+				),
+
+				// 监听端口：radio 列表——每选项自带常显说明；自定义行输入框伸满行宽
+				React.createElement("div", { style: rowStyle },
+					React.createElement("div", { style: { minWidth: 0, width: "100%" } },
+						React.createElement("div", { style: labelStyle }, "监听端口"),
+						React.createElement("div", { style: subStyle },
+							"dsh web 仅监听 127.0.0.1；固定端口让会话区域宽度等页面设置跨重启保留",
+						),
+						portInfo ? React.createElement("div", { style: subStyle },
+							`本次监听：${portInfo.actual ?? "…"}`
+							+ (portInfo.degraded ? "（配置端口被占用，已临时降级随机，页面设置本次不会保留）" : ""),
+						) : null,
+
+						// 选项一：默认 3080
+						React.createElement("label", { style: { display: "flex", alignItems: "center", gap: "8px", marginTop: "12px", cursor: "pointer" } },
+							React.createElement("input", {
+								type: "radio", name: "dsh-desktop-port-policy",
+								checked: portMode === "default",
+								onChange: () => applyPortPolicy(3080),
+								style: { accentColor: BRAND, width: "15px", height: "15px", cursor: "pointer", margin: 0, flexShrink: 0 },
+							}),
+							React.createElement("span", { style: { fontSize: "13px", color: "var(--dsw-alias-label-primary, #1f2329)" } }, "默认 3080"),
+						),
+						React.createElement("div", { style: { ...subStyle, paddingLeft: "23px" } },
+							"与 dsh web 默认端口一致。注意：壳常驻后台（关闭窗口仅隐藏到托盘）期间会一直占用它，终端裸跑 dsh web（不带参数）会启动失败，需改用 dsh web --port <其他端口> 避让；从托盘退出后端口释放",
+						),
+
+						// 选项二：自定义端口 + 伸满行宽的输入框
+						React.createElement("label", { style: { display: "flex", alignItems: "center", gap: "8px", marginTop: "10px", cursor: "pointer" } },
+							React.createElement("input", {
+								type: "radio", name: "dsh-desktop-port-policy",
+								checked: portMode === "custom",
+								onChange: () => applyPortPolicy(customPort),
+								style: { accentColor: BRAND, width: "15px", height: "15px", cursor: "pointer", margin: 0, flexShrink: 0 },
+							}),
+							React.createElement("span", { style: { fontSize: "13px", color: "var(--dsw-alias-label-primary, #1f2329)", flexShrink: 0 } }, "自定义端口"),
+							React.createElement("input", {
+								key: String(portMode === "custom" ? portConfigured : customPort),
+								type: "number", min: 1024, max: 65535,
+								defaultValue: portMode === "custom" ? portConfigured : customPort,
+								disabled: portMode !== "custom",
+								onBlur: (e) => {
+									if (portMode !== "custom") return
+									const n = Number.parseInt(e.target.value, 10)
+									if (Number.isInteger(n) && n >= 1024 && n <= 65535) applyPortPolicy(n)
+									else e.target.value = String(portConfigured) // 非法输入还原
+								},
+								style: {
+									flex: 1, minWidth: "80px", borderRadius: "6px",
+									border: "1px solid var(--dsw-alias-border-l2, #d0d5de)",
+									padding: "5px 8px", fontSize: "12px",
+									background: "transparent", color: "var(--dsw-alias-label-primary, #1f2329)",
+								},
+							}),
+						),
+						React.createElement("div", { style: { ...subStyle, paddingLeft: "23px" } },
+							"选择不与终端 dsh web（3080）冲突的端口可与它并存，页面设置同样跨重启保留",
+						),
+
+						// 选项三：随机端口（正在使用时展示实际端口号）
+						React.createElement("label", { style: { display: "flex", alignItems: "center", gap: "8px", marginTop: "10px", cursor: "pointer" } },
+							React.createElement("input", {
+								type: "radio", name: "dsh-desktop-port-policy",
+								checked: portMode === "random",
+								onChange: () => applyPortPolicy("random"),
+								style: { accentColor: BRAND, width: "15px", height: "15px", cursor: "pointer", margin: 0, flexShrink: 0 },
+							}),
+							React.createElement("span", { style: { fontSize: "13px", color: "var(--dsw-alias-label-primary, #1f2329)" } },
+								"随机端口",
+								portMode === "random" && portInfo && portInfo.actual
+									? `（本次：${portInfo.actual}）` : "",
+							),
+						),
+						React.createElement("div", { style: { ...subStyle, paddingLeft: "23px" } },
+							"每次启动端口都变，会话区域宽度等页面侧设置在重启后不会保留；仅在需要规避端口冲突时使用",
+						),
+
+						portDraft !== null ? React.createElement("div", { style: { ...subStyle, marginTop: "10px" } },
+							"已保存，重启应用后生效",
+						) : null,
 					),
 				),
 
@@ -225,8 +329,8 @@ window.__ModuleLoader__.load({
 							: null,
 					),
 					React.createElement("div", { style: { display: "flex", gap: "8px", alignItems: "center" } },
-						presetBtn("standard", "标准 (748px)"),
-						presetBtn("full", "全宽 (90%)"),
+						segBtn(convWidth === "standard", () => setConvWidthMode("standard"), "标准 (748px)"),
+						segBtn(convWidth === "full", () => setConvWidthMode("full"), "全宽 (90%)"),
 					),
 				),
 

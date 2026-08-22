@@ -28,7 +28,7 @@ English | [简体中文](README.zh.md)
 - **Frameless immersive window** — no native title bar; the custom window controls (minimize / maximize / close) blend into the page with DeepSeek brand-blue hover and follow the light/dark theme
 - **Always-on tray** — closing the window hides to the system tray instead of quitting; the backend keeps running for instant resume
 - **Auto-start at login** — toggle in the tray menu (Windows/macOS native; Linux via XDG autostart)
-- **Port-conflict proof** — `--port 0` lets the OS pick a free port; the shell discovers the real address from dsh's stdout readiness line
+- **Configurable port policy** — fixed `3080` by default (same as `dsh web`, giving a stable page origin so browser-side preferences survive restarts), switchable to a custom port or random in Settings; falls back to a random port with a notice when the fixed port is taken. Note: while the shell lives in the tray it holds the port — run `dsh web --port <other>` in a terminal to coexist; after upgrading from older releases, browser-side preferences (e.g. chat width) need one manual re-set, then persist across restarts
 - **Single instance** — launching again focuses the existing window
 - **Full plugin freedom** — dynamic plugins (`cordis_define`/`cordis_run`), `$DSH_HOME/cordis.patch.yml`, and the npm plugin ecosystem all work exactly as in the web edition
 - **Desktop settings section** — the app's Settings page gains a "Desktop" tab (styled to match the harness UI): dsh version card (check & one-click upgrade), shell auto-update check, auto-start toggle, launch-minimized toggle, About card — all in sync with the tray menu
@@ -108,9 +108,9 @@ src/
   paths.ts         dev/prod resource resolution (icon, preload, desktop plugin patch)
   dsh-locator.ts   locate the user's dsh CLI (PATH check + npm root -g) + semver compare
   dsh-updater.ts   settings-card backend: check npm latest / one-click npm i -g upgrade
-  settings.ts      shell settings (userData/settings.json — launch-minimized)
+  settings.ts      shell settings (userData/settings.json — launch-minimized, port policy)
   updater.ts       electron-updater (Windows guided / Linux AppImage auto)
-  dsh/spawn.ts     spawn dsh web --port 0 --patch; parse stdout URL line; graceful stop
+  dsh/spawn.ts     spawn dsh web --port <policy port> --patch; parse stdout URL line; graceful stop
   dsh/ready.ts     HTTP readiness probe
   tray.ts          tray menu (open / auto-start / quit) + autostart sync
   autostart.ts     auto-start (native on win/mac; XDG file on linux)
