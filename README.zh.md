@@ -28,7 +28,7 @@
 - **无边框沉浸窗口** — 无原生标题栏；自绘窗口控制按钮（最小化/最大化/关闭）以 DeepSeek 品牌蓝 hover 融入页面，并随明暗主题切换
 - **托盘常驻** — 关闭窗口隐藏到系统托盘而非退出，后端持续运行，随时秒开
 - **开机自启** — 托盘菜单一键开关（Windows/macOS 原生实现；Linux 走 XDG autostart）
-- **端口冲突免疫** — `--port 0` 让系统分配空闲端口，壳从 dsh 的 stdout 就绪行读取真实地址
+- **端口策略可配** — 默认固定 `3080`（与 `dsh web` 一致，页面 origin 稳定，浏览器侧设置跨重启保留），设置页可改为自定义端口或随机；固定端口被占时自动降级随机并提示。注意：壳常驻托盘期间占用该端口，终端裸跑 `dsh web` 需带 `--port` 避让；从旧版本升级后页面侧设置（如会话宽度）需重设一次，之后跨重启保留
 - **单实例** — 重复启动会聚焦已有窗口
 - **插件自由不受限** — 动态插件（`cordis_define`/`cordis_run`）、`$DSH_HOME/cordis.patch.yml`、npm 插件生态均与 Web 版完全一致
 - **设置页桌面分区** — 设置页新增「桌面」标签页（UI 契合 harness 设计）：dsh 版本卡片（检查并一键升级）、桌壳自身更新检查、开机自启开关、启动最小化开关、关于卡片，均与托盘菜单双向同步
@@ -108,9 +108,9 @@ src/
   paths.ts         dev/prod 资源路径解析（图标、preload、桌面插件 patch）
   dsh-locator.ts   定位用户已装的 dsh CLI（PATH 验证 + npm root -g）+ semver 比较
   dsh-updater.ts   设置页后端卡片：检查 npm 最新版 / 一键 npm i -g 升级
-  settings.ts      壳设置（userData/settings.json — 启动最小化）
+  settings.ts      壳设置（userData/settings.json — 启动最小化、监听端口策略）
   updater.ts       electron-updater（Windows 引导 / Linux AppImage 全自动）
-  dsh/spawn.ts     spawn dsh web --port 0 --patch，解析 stdout URL 行，优雅停止
+  dsh/spawn.ts     spawn dsh web --port <策略端口> --patch，解析 stdout URL 行，优雅停止
   dsh/ready.ts     HTTP 就绪探测
   tray.ts          托盘菜单（打开 / 开机自启 / 退出）+ 自启勾选同步
   autostart.ts     开机自启（win/mac 原生 + linux XDG 文件）

@@ -6,7 +6,21 @@ import { app } from 'electron'
 import { readFileSync, writeFileSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
 
-interface ShellSettings { launchMinimized?: boolean }
+/** 监听端口策略：固定端口号，或 'random'（每次启动随机分配）。 */
+export type PortPolicy = number | 'random'
+
+interface ShellSettings { launchMinimized?: boolean; portPolicy?: PortPolicy }
+
+/**
+ * 端口策略归一化：'random' 保留；1024–65535 整数视为固定端口；
+ * 其余（含缺省）回落 3080（与 dsh web 默认一致）。低于 1024 的端口
+ * bind 需要管理员权限，直接拒绝。
+ */
+export function normalizePortPolicy(v: unknown): PortPolicy {
+  if (v === 'random') return 'random'
+  const n = typeof v === 'number' ? v : typeof v === 'string' && v !== '' ? Number.parseInt(v, 10) : Number.NaN
+  return Number.isInteger(n) && n >= 1024 && n <= 65535 ? n : 3080
+}
 
 function settingsPath(): string {
   return join(app.getPath('userData'), 'settings.json')
@@ -46,4 +60,12 @@ export function getLaunchMinimized(): boolean {
 
 export function setLaunchMinimized(v: boolean): void {
   write({ ...read(), launchMinimized: v })
+}
+
+export function getPortPolicy(): PortPolicy {
+  return normalizePortPolicy(read().portPolicy)
+}
+
+export function setPortPolicy(v: unknown): void {
+  write({ ...read(), portPolicy: normalizePortPolicy(v) })
 }

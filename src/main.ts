@@ -7,10 +7,13 @@
  */
 
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell } from 'electron'
-import { startDsh, type DshControl } from './dsh/spawn.js'
+import { startDsh, isTcpPortFree, type DshControl } from './dsh/spawn.js'
 import { createTray, syncTrayAutostart, type TrayHandlers } from './tray.js'
 import { dshHomeDir, iconPath, preloadPath, resourcesDir } from './paths.js'
-import { getLaunchMinimized, setLaunchMinimized } from './settings.js'
+import {
+  getLaunchMinimized, setLaunchMinimized, getPortPolicy, setPortPolicy,
+  type PortPolicy,
+} from './settings.js'
 import { isAutostartEnabled, setAutostart } from './autostart.js'
 import { initUpdater, checkForUpdates as runUpdateCheck, setRunInstaller } from './updater.js'
 import {
@@ -33,6 +36,10 @@ let dsh: DshControl | null = null
 let quitting = false
 /** 用户已装的 dsh（纯壳架构：壳不内置运行时，spawn 用户 PATH 里的 CLI）。 */
 let locatedDsh: LocatedDsh | null = null
+/** 本次会话实际监听端口（固定或随机，从 URL 行解析）；null = 尚未启动。 */
+let dshPortActual: number | null = null
+/** 本次是否因配置的固定端口被占而降级随机（页面 localStorage 侧设置本次不保留）。 */
+let dshPortDegraded = false
 
 /**
  * 用户 dsh 版本（locateDsh 检测结果）。未检测到返回 'unknown'。
@@ -76,6 +83,19 @@ function registerAppIpc(): void {
       return
     }
     setLaunchMinimized(enabled)
+  })
+  // 端口策略：configured 为配置值（重启后生效），actual/degraded 为本次运行状态
+  ipcMain.handle('dsh-settings:get-port-policy', (): { configured: PortPolicy; actual: number | null; degraded: boolean } => ({
+    configured: getPortPolicy(),
+    actual: dshPortActual,
+    degraded: dshPortDegraded,
+  }))
+  ipcMain.handle('dsh-settings:set-port-policy', (_event, v: unknown) => {
+    if (typeof v !== 'number' && typeof v !== 'string') {
+      log(`ipc: dsh-settings:set-port-policy 收到非法参数 ${typeof v}`)
+      return
+    }
+    setPortPolicy(v)
   })
   ipcMain.handle('dsh-app:get-info', () => ({
     // dev 下带 -dev 后缀，与打包版一眼区分
@@ -182,6 +202,15 @@ async function startDshAndLoad(located: LocatedDsh): Promise<void> {
   // --no-open 仅 dsh ≥0.1.0-rc.8 认识；低版本省略（退化为可能弹一次浏览器）
   const noOpen = compareVersions(located.version, '0.1.0-rc.8') >= 0
   log(`spawn dsh: node=node bin=${located.binJs} version=${located.version} noOpen=${noOpen} DSH_HOME=${dshHomeDir()}`)
+  // 端口策略：固定端口空闲则用（origin 稳定，localStorage 侧设置跨重启保留）；
+  // 被占/策略为随机则 --port 0 降级，避免 dsh EADDRINUSE 硬失败退出。
+  const policy = getPortPolicy()
+  let port: number | undefined
+  if (policy !== 'random' && await isTcpPortFree(policy)) port = policy
+  dshPortDegraded = policy !== 'random' && port === undefined
+  if (dshPortDegraded) {
+    log(`端口 ${policy} 被占用，本次降级随机端口（页面侧设置本次不保留）`)
+  }
   ensureDesktopPlugin(dshHomeDir())
   dsh = startDsh({
     nodePath: 'node',
@@ -189,6 +218,7 @@ async function startDshAndLoad(located: LocatedDsh): Promise<void> {
     dshHome: dshHomeDir(),
     onLog: log,
     noOpen,
+    port,
   })
 
   dsh.exited.then(({ expected, code, signal }) => {
@@ -204,7 +234,9 @@ async function startDshAndLoad(located: LocatedDsh): Promise<void> {
   })
 
   const url = await dsh.url
-  log(`dsh 就绪: ${url}`)
+  log(`dsh 就绪: ${url}${dshPortDegraded ? '（降级随机）' : ''}`)
+  const parsedPort = Number.parseInt(new URL(url).port, 10)
+  dshPortActual = Number.isNaN(parsedPort) ? null : parsedPort
   if (!quitting) await win?.loadURL(url)
 }
 

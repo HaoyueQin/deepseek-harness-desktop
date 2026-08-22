@@ -1,18 +1,38 @@
 /**
- * dsh web 子进程生命周期：spawn（内置 Node + --port 0）、stdout URL 行解析、
- * HTTP 就绪探测、优雅停止（kill → 超时强杀兜底）。
+ * dsh web 子进程生命周期：spawn、stdout URL 行解析、HTTP 就绪探测、
+ * 优雅停止（kill → 超时强杀兜底）。
  *
- * 端口策略：--port 0 让 OS 分配，从 stdout 行 "dsh web: http://127.0.0.1:<port>"
- * 解析实际地址——这是 dsh 官方给 supervisor 的通道（源码注释：
+ * 端口：默认固定 3080（与 dsh web 默认一致，页面 origin 稳定，浏览器
+ * localStorage 侧的设置跨重启保留），被占用时由调用方降级 --port 0。
+ * 无论固定或随机，实际地址都从 stdout 行 "dsh web: http://127.0.0.1:<port>"
+ * 解析——这是 dsh 官方给 supervisor 的通道（源码注释：
  * "The URL line is a readiness signal: supervisors RPC as soon as they observe it"）。
- * 规避固定 3080 的端口冲突。
  */
 
 import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import { createConnection } from 'node:net'
 import { waitForHttp } from './ready.js'
 import { UrlLineMatcher } from './url-line.js'
 import { desktopPatchPath } from '../paths.js'
+
+/**
+ * TCP 空闲探测：能建立连接 = 已被占用（ECONNREFUSED = 空闲）；
+ * 连接超时按被占处理（保守降级随机，绝不因探测误判导致 bind 失败）。
+ */
+export function isTcpPortFree(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = createConnection({ host: '127.0.0.1', port }, () => {
+      socket.destroy()
+      resolve(false)
+    })
+    socket.on('error', () => resolve(true))
+    socket.setTimeout(1_000, () => {
+      socket.destroy()
+      resolve(false)
+    })
+  })
+}
 
 export interface StartDshOptions {
   nodePath: string
@@ -27,6 +47,12 @@ export interface StartDshOptions {
    * 低版本不认识该 flag 会启动报错，调用方须按版本判断后决定。
    */
   noOpen?: boolean
+  /**
+   * 固定监听端口；缺省 0（OS 随机分配）。实际地址一律从 stdout URL 行
+   * 解析，固定/随机对端口发现逻辑无差别。EADDRINUSE 会让 dsh 直接退出
+   * （上游行为，不自动换端口），固定端口须由调用方先探测空闲。
+   */
+  port?: number
 }
 
 export interface DshControl {
@@ -39,19 +65,19 @@ export interface DshControl {
 }
 
 export function startDsh(options: StartDshOptions): DshControl {
-  const { nodePath, dshBin, dshHome, onLog, readyTimeoutMs = 60_000, noOpen = false } = options
+  const { nodePath, dshBin, dshHome, onLog, readyTimeoutMs = 60_000, noOpen = false, port = 0 } = options
 
   // 桌面集成插件 patch（存在则挂载设置页「桌面」分区）。
   // 顺序关键：--patch 是 launcher（web 子命令）的 option，必须位于透传参数
-  // （--port 0）之前；放后面会被 commander 归入透传 args 导致 unknown option。
+  // （--port）之前；放后面会被 commander 归入透传 args 导致 unknown option。
   const patchArgs: string[] = []
   const patchFile = desktopPatchPath()
   if (existsSync(patchFile)) patchArgs.push('--patch', patchFile)
 
   // --no-open（dsh 0.1.0-rc.8+ 的 web 透传 flag）：dsh web 默认会用系统
   // 浏览器打开就绪地址，桌面端自带窗口，必须关掉，否则每次启动都多弹
-  // 一个浏览器标签。放透传区（--port 0 之后），不影响 stdout URL 就绪行。
-  const child = spawn(nodePath, [dshBin, 'web', ...patchArgs, '--port', '0', ...(noOpen ? ['--no-open'] : [])], {
+  // 一个浏览器标签。放透传区（--port 之后），不影响 stdout URL 就绪行。
+  const child = spawn(nodePath, [dshBin, 'web', ...patchArgs, '--port', String(port), ...(noOpen ? ['--no-open'] : [])], {
     env: { ...process.env, DSH_HOME: dshHome },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,

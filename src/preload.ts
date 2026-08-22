@@ -20,6 +20,11 @@ contextBridge.exposeInMainWorld('dshDesktop', {
     get: (): Promise<boolean> => ipcRenderer.invoke('dsh-settings:get-launch-minimized'),
     set: (enabled: boolean): Promise<void> => ipcRenderer.invoke('dsh-settings:set-launch-minimized', enabled),
   },
+  portPolicy: {
+    get: (): Promise<{ configured: number | 'random'; actual: number | null; degraded: boolean }> =>
+      ipcRenderer.invoke('dsh-settings:get-port-policy'),
+    set: (v: number | 'random'): Promise<void> => ipcRenderer.invoke('dsh-settings:set-port-policy', v),
+  },
   getInfo: (): Promise<{ appVersion: string; dshVersion: string; dshHome: string; logDir: string }> =>
     ipcRenderer.invoke('dsh-app:get-info'),
   openPath: (p: string): Promise<{ ok: boolean; error?: string }> =>
