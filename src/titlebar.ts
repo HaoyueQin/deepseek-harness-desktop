@@ -42,9 +42,9 @@ export const INJECT_TITLEBAR = `(() => {
   bar.style.cssText = 'position:fixed;top:0;left:0;right:0;height:' + HEIGHT + 'px;z-index:9999;' +
     'display:flex;align-items:stretch;justify-content:flex-end;-webkit-app-region:drag'
   // 刷新图标：Bootstrap Icons（MIT）官方 bi-arrow-clockwise 原版路径——
-  // viewBox 0 0 16 16 缩放到 10px 显示时线宽 0.94px，与相邻 1px 线框按钮协调；
-  // 实心小箭头在 10px 下仍可辨（Lucide/Material 线条箭头实测 10px 会糊成实心块）。
-  const RF = '<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">' +
+  // viewBox 0 0 16 16；实心小箭头在 14px 下仍可辨（10px 实测会糊，16px 显大）。
+  // 显示 14px：原版无描边（线宽 0.94px，46x26 按钮内居中，与三键 1px 线框一致）。
+  const RF = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">' +
     '<path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/>' +
     '<path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/></svg>'
   const M = '<svg width="10" height="10" viewBox="0 0 10 10"><line x1="0" y1="5" x2="10" y2="5" stroke="currentColor" stroke-width="1"/></svg>'
