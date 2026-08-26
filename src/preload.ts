@@ -9,8 +9,10 @@ contextBridge.exposeInMainWorld('dshDesktop', {
   minimize: (): Promise<void> => ipcRenderer.invoke('dsh-window:minimize'),
   maximizeToggle: (): Promise<void> => ipcRenderer.invoke('dsh-window:maximize-toggle'),
   close: (): Promise<void> => ipcRenderer.invoke('dsh-window:close'),
-  onMaximized: (cb: (maximized: boolean) => void): void => {
-    ipcRenderer.on('dsh-window:maximized', (_event, maximized: boolean) => cb(maximized))
+  onMaximized: (cb: (maximized: boolean) => void): () => void => {
+    const handler = (_event: unknown, maximized: boolean): void => cb(maximized)
+    ipcRenderer.on('dsh-window:maximized', handler)
+    return () => ipcRenderer.removeListener('dsh-window:maximized', handler)
   },
   autostart: {
     get: (): Promise<boolean> => ipcRenderer.invoke('dsh-app:get-autostart'),
@@ -29,13 +31,24 @@ contextBridge.exposeInMainWorld('dshDesktop', {
     ipcRenderer.invoke('dsh-app:get-info'),
   openPath: (p: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('dsh-app:open-path', p),
-  checkForUpdates: (): Promise<{ current: string; latest: string | null; downloading: boolean; downloaded: boolean; unsupported?: boolean }> =>
-    ipcRenderer.invoke('dsh-update:check'),
+  // 两段式更新：检查→下载→安装，每步都由设置页显式触发（绝不一条龙）
+  update: {
+    check: (): Promise<unknown> => ipcRenderer.invoke('dsh-update:check'),
+    download: (): Promise<unknown> => ipcRenderer.invoke('dsh-update:download'),
+    install: (): Promise<unknown> => ipcRenderer.invoke('dsh-update:install'),
+    onStatus: (cb: (s: unknown) => void): (() => void) => {
+      const handler = (_event: unknown, s: unknown): void => cb(s)
+      ipcRenderer.on('dsh-update:status', handler)
+      return () => ipcRenderer.removeListener('dsh-update:status', handler)
+    },
+  },
   backend: {
     check: (): Promise<unknown> => ipcRenderer.invoke('dsh-backend:check'),
     update: (): Promise<unknown> => ipcRenderer.invoke('dsh-backend:update'),
-    onStatus: (cb: (s: unknown) => void): void => {
-      ipcRenderer.on('dsh-backend:update-status', (_event, s: unknown) => cb(s))
+    onStatus: (cb: (s: unknown) => void): () => void => {
+      const handler = (_event: unknown, s: unknown): void => cb(s)
+      ipcRenderer.on('dsh-backend:update-status', handler)
+      return () => ipcRenderer.removeListener('dsh-backend:update-status', handler)
     },
   },
   setup: {

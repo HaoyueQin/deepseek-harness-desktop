@@ -32,7 +32,7 @@ English | [简体中文](README.zh.md)
 - **Single instance** — launching again focuses the existing window
 - **Full plugin freedom** — dynamic plugins (`cordis_define`/`cordis_run`), `$DSH_HOME/cordis.patch.yml`, and the npm plugin ecosystem all work exactly as in the web edition
 - **Desktop settings section** — the app's Settings page gains a "Desktop" tab (styled to match the harness UI): dsh version card (check & one-click upgrade), shell auto-update check, auto-start toggle, launch-minimized toggle, About card — all in sync with the tray menu
-- **Shell self-update** — checks silently 15s after launch: Windows downloads and guides you to run the installer (unsigned builds can't install silently); Linux AppImage replaces itself automatically; macOS excluded (needs signing)
+- **Shell self-update (two-step)** — checks silently 15s after launch (detection only, never auto-downloads): a "Download update" button appears in Settings, switching to "Install update" once downloaded — every step is triggered by you. Windows installs by quitting and running the installer (unsigned builds can't install silently); Linux AppImage replaces itself automatically; macOS excluded (needs signing)
 
 ## Screenshot
 

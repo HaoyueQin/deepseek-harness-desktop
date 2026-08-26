@@ -20,10 +20,12 @@ export interface BackendUpdateStatus {
   latest: string | null
   stage: UpdateStage
   error?: string
+  /** 完成过一次检查（成功）；false = 尚未检查，UI 不得显示「已是最新版本」。 */
+  checked?: boolean
 }
 
 let currentVersion = 'unknown'
-let status: BackendUpdateStatus = { current: 'unknown', latest: null, stage: 'idle' }
+let status: BackendUpdateStatus = { current: 'unknown', latest: null, stage: 'idle', checked: false }
 const listeners: Array<(s: BackendUpdateStatus) => void> = []
 
 function publish(): void {
@@ -40,13 +42,19 @@ export function initBackendUpdater(current: string): void {
   status.current = current
 }
 
+/** npm 版本串白名单（semver：核心 3 段 + 可选预发布/构建元数据）；防注入命令行。 */
+const SEMVER_RE = /^\d+\.\d+\.\d+([-+][0-9A-Za-z.-]+)?$/
+
 function runNpm(args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
-    // 参数均为固定字面量；shell:true 仅用于 Windows 解析 .cmd shim
-    const child = spawn('npm', args, {
-      windowsHide: true,
-      shell: process.platform === 'win32',
-    })
+    // 参数为受控字面量（含动态版本串的调用方已过 SEMVER_RE 白名单）；Windows
+    // 经 ComSpec /c 解析 .cmd shim（shell:true+args 数组在 Node≥22 有 DEP0190 警告）
+    const cmdStr = ['npm', ...args].join(' ')
+    const isWin = process.platform === 'win32'
+    const child = spawn(isWin ? process.env.ComSpec ?? 'cmd' : 'npm',
+      isWin ? ['/d', '/s', '/c', cmdStr] : args, {
+        windowsHide: true,
+      })
     let out = ''
     let err = ''
     child.stdout?.on('data', (d: Buffer) => { out += d.toString() })
@@ -69,6 +77,7 @@ export async function checkBackendUpdate(): Promise<BackendUpdateStatus> {
     const latest = await runNpm(['view', '@deepseek-ai/dsh@latest', 'version'])
     status.latest = latest === '' || latest === currentVersion ? null : latest
     status.stage = 'idle'
+    status.checked = true // 检查成功（无论有无新版）才标记，UI 据此显示「已是最新版本」
   } catch (err) {
     status.stage = 'error'
     status.error = String(err)
@@ -101,13 +110,24 @@ export async function updateBackend(): Promise<BackendUpdateStatus> {
     currentVersion = located.version
     status.current = located.version
     status.latest = null
+    status.checked = true
     status.stage = 'done'
     log(`dsh-updater: 已升级到 ${located.version}`)
-    if (restartHandler !== null) await restartHandler()
   } catch (err) {
     status.stage = 'error'
     status.error = String(err)
     log(`dsh-updater: 升级失败 ${String(err)}`)
+    publish()
+    return { ...status }
+  }
+  // 安装成功但重启失败不误报「更新失败」：版本已就位，仅提示重启
+  if (restartHandler !== null) {
+    try {
+      await restartHandler()
+    } catch (err) {
+      status.error = `已升级到 ${currentVersion}，但重启后端失败：${String(err)}（重启应用即可生效）`
+      log(`dsh-updater: ${status.error}`)
+    }
   }
   publish()
   return { ...status }

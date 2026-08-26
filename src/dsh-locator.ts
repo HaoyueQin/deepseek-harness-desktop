@@ -19,12 +19,15 @@ export interface LocatedDsh {
 }
 
 function run(cmd: string, args: string[]): { ok: boolean; out: string } {
-  // 参数均为固定字面量（无用户输入），shell:true 仅用于 Windows 解析 .cmd shim
-  const r = spawnSync(cmd, args, {
-    encoding: 'utf8',
-    windowsHide: true,
-    shell: process.platform === 'win32',
-  })
+  // 参数均为固定字面量（无用户输入）。Windows 下 .cmd shim 需经 ComSpec 解析：
+  // shell:true+args 数组在 Node≥22 触发 DEP0190（参数不转义仅拼接，安全隐患），
+  // 改为显式 cmd /c（调用方保证参数受控；含动态值的调用方须先过白名单校验）。
+  const isWin = process.platform === 'win32'
+  const r = spawnSync(isWin ? process.env.ComSpec ?? 'cmd' : cmd,
+    isWin ? ['/d', '/s', '/c', [cmd, ...args].join(' ')] : args, {
+      encoding: 'utf8',
+      windowsHide: true,
+    })
   return { ok: r.status === 0, out: (r.stdout || '').trim() }
 }
 

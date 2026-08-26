@@ -15,9 +15,14 @@ import { tmpdir } from 'node:os'
 
 // 与 src/dsh-locator.ts 同逻辑：PATH 验证 + npm root -g 推导 bin.js
 function locateDsh() {
-  const ver = spawnSync('dsh', ['--version'], { encoding: 'utf8', windowsHide: true, shell: process.platform === 'win32' })
+  // Windows 下 .cmd shim 经 ComSpec /c 解析（shell:true+args 在 Node≥22 有 DEP0190 警告）
+  const shim = (cmd) => process.platform === 'win32'
+    ? { cmd: process.env.ComSpec ?? 'cmd', args: ['/d', '/s', '/c', cmd] }
+    : { cmd: cmd.split(' ')[0], args: cmd.split(' ').slice(1) }
+  const runShim = (cmd) => { const s = shim(cmd); return spawnSync(s.cmd, s.args, { encoding: 'utf8', windowsHide: true }) }
+  const ver = runShim('dsh --version')
   if (ver.status !== 0 || !ver.stdout?.trim()) throw new Error('未检测到 dsh（先 npm i -g @deepseek-ai/dsh）')
-  const rootDir = spawnSync('npm', ['root', '-g'], { encoding: 'utf8', windowsHide: true, shell: process.platform === 'win32' })
+  const rootDir = runShim('npm root -g')
   if (rootDir.status !== 0 || !rootDir.stdout?.trim()) throw new Error('未检测到 npm')
   const binJs = join(rootDir.stdout.trim(), '@deepseek-ai', 'dsh', 'lib', 'bin.js')
   if (!existsSync(binJs)) throw new Error(`未找到 ${binJs}`)

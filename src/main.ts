@@ -15,7 +15,10 @@ import {
   type PortPolicy,
 } from './settings.js'
 import { isAutostartEnabled, setAutostart } from './autostart.js'
-import { initUpdater, checkForUpdates as runUpdateCheck, setRunInstaller } from './updater.js'
+import {
+  initUpdater, checkForUpdates as runUpdateCheck, onUpdateStatus,
+  downloadUpdate, installUpdate, setRunInstaller,
+} from './updater.js'
 import {
   checkBackendUpdate, initBackendUpdater,
   onBackendUpdateStatus, setBackendRestartHandler, updateBackend,
@@ -117,6 +120,9 @@ function registerAppIpc(): void {
   })
   // checkForUpdates 接 electron-updater 真实实现（win/linux；mac 返回 current）
   ipcMain.handle('dsh-update:check', () => runUpdateCheck())
+  // 两段式更新：下载/安装由设置页按钮显式触发（updater 内部绝不自动下载安装）
+  ipcMain.handle('dsh-update:download', () => downloadUpdate())
+  ipcMain.handle('dsh-update:install', () => installUpdate())
   // 后端（用户已装的 dsh CLI）版本检测与一键升级
   ipcMain.handle('dsh-backend:check', () => checkBackendUpdate())
   ipcMain.handle('dsh-backend:update', () => updateBackend())
@@ -303,10 +309,12 @@ function registerSetupIpc(): void {
   ipcMain.handle('dsh-setup:install', () => {
     if (setupInstalling) return true // 幂等：已在安装中
     setupInstalling = true
-    const child = spawn('npm', ['i', '-g', '@deepseek-ai/dsh'], {
-      windowsHide: true,
-      shell: process.platform === 'win32',
-    })
+    // 参数全部固定字面量；Windows 经 ComSpec /c 解析 .cmd shim（shell:true+args 数组在 Node≥22 触发 DEP0190）
+    const isWin = process.platform === 'win32'
+    const child = spawn(isWin ? process.env.ComSpec ?? 'cmd' : 'npm',
+      isWin ? ['/d', '/s', '/c', 'npm i -g @deepseek-ai/dsh'] : ['i', '-g', '@deepseek-ai/dsh'], {
+        windowsHide: true,
+      })
     const push = (t: string): void => { if (!quitting) win?.webContents.send('dsh-setup:install-output', t) }
     child.stdout?.on('data', (d: Buffer) => push(d.toString()))
     child.stderr?.on('data', (d: Buffer) => push(d.toString()))
@@ -502,6 +510,9 @@ function main(): void {
     if (quitting) return
 
     onBackendUpdateStatus((s) => { win?.webContents.send('dsh-backend:update-status', s) })
+    // 桌壳更新状态实时推给设置页（两段式 UI：发现新版/下载中/可安装；后台
+    // 15s 自动检查发现的版本同样经此到达页面，但下载始终由用户按钮触发）
+    onUpdateStatus((s) => { win?.webContents.send('dsh-update:status', s) })
     setBackendRestartHandler(async () => {
       // 停旧 dsh → 重启 → 窗口重载
       if (dsh !== null) { await dsh.stop(); dsh = null }

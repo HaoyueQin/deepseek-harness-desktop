@@ -9,10 +9,20 @@ import { join } from 'node:path'
 /** main.log 单文件上限：超限把当前文件轮转为 main.log.1（保留最近一份）。 */
 const MAX_LOG_BYTES = 5 * 1024 * 1024
 
+/**
+ * stdout 管道可能断开（dev 下父进程被杀/重定向关闭）：EPIPE 未捕获会让
+ * Electron 主进程弹「JavaScript error」崩溃窗——静默吞掉，杜绝一次性。
+ */
+process.stdout.on('error', () => { /* stdout 不可写：静默 */ })
+
 export function log(message: string): void {
   const line = `[${new Date().toISOString()}] ${message}\n`
   if (!app.isPackaged) {
-    console.log(line.trimEnd())
+    try {
+      console.log(line.trimEnd())
+    } catch {
+      /* stdout 不可写：静默 */
+    }
     return
   }
   try {

@@ -11,6 +11,7 @@ window.__ModuleLoader__.load({
 		const React = require("react")
 
 		const BRAND = "#4176E6" // --dsw-static-deepseek-500 兜底
+		const OK_GREEN = "#16a34a" // 语义成功绿（dsh token 无专用 success 色，取通用值）
 
 		const rowStyle = {
 			display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -101,7 +102,10 @@ window.__ModuleLoader__.load({
 			const [autostart, setAutostart] = React.useState(false)
 			const [launchMin, setLaunchMin] = React.useState(false)
 			const [info, setInfo] = React.useState(null)
-			const [update, setUpdate] = React.useState({ checking: false, unsupported: false, latest: null, devMode: false })
+			const [update, setUpdate] = React.useState({
+				checking: false, unsupported: false, devMode: false,
+				latest: null, downloading: false, downloaded: false, checked: false,
+			})
 		// 监听端口策略：configured=配置值（重启生效）；actual/degraded=本次运行状态。
 		// portDraft=本次会话内已修改待重启的配置（覆盖显示）。
 		const [portInfo, setPortInfo] = React.useState(null)
@@ -115,16 +119,23 @@ window.__ModuleLoader__.load({
 			if (desktop.portPolicy) desktop.portPolicy.get().then(setPortInfo).catch(() => {})
 		}, [])
 
-			if (!desktop) return null // 裸 dsh 降级：无桥则渲染空
-
 			const toggleAutostart = (v) => { setAutostart(v); desktop.autostart.set(v).catch(() => {}) }
 			const toggleLaunch = (v) => { setLaunchMin(v); desktop.launchMinimized.set(v).catch(() => {}) }
 			const openPath = (p) => { if (p) desktop.openPath(p).catch(() => {}) }
 			const check = () => {
+				if (!desktop || !desktop.update) return // 旧壳桥上无 update 组（混合态防崩）
 				setUpdate((u) => ({ ...u, checking: true }))
-				desktop.checkForUpdates()
-					.then((r) => setUpdate({ checking: false, unsupported: r.unsupported, latest: r.latest, devMode: r.devMode }))
-					.catch(() => setUpdate({ checking: false, unsupported: false, latest: null }))
+				desktop.update.check()
+					.then((r) => setUpdate((u) => ({ ...u, checking: false, ...r })))
+					.catch(() => setUpdate((u) => ({ ...u, checking: false })))
+			}
+			const downloadUpdate = () => {
+				if (!desktop || !desktop.update) return
+				desktop.update.download().then((r) => setUpdate((u) => ({ ...u, ...r }))).catch(() => {})
+			}
+			const installUpdate = () => {
+				if (!desktop || !desktop.update) return
+				desktop.update.install().then((r) => setUpdate((u) => ({ ...u, ...r }))).catch(() => {})
 			}
 
 			// 后端（内置 dsh 运行时）版本检测与一键更新
@@ -134,8 +145,20 @@ window.__ModuleLoader__.load({
 			})
 			React.useEffect(() => {
 				if (!backend) return
-				backend.onStatus((s) => setBackendStatus((prev) => ({ ...prev, ...s })))
+				// onStatus 返回 unsubscribe：设置页 SPA 内反复切换时防止 ipcRenderer 监听器累积
+				return backend.onStatus((s) => setBackendStatus((prev) => ({ ...prev, ...s })))
 			}, [backend])
+			// 桌壳更新状态实时推送（后台 15s 自动检查/手动检查/下载进度均经此到达）
+			React.useEffect(() => {
+				if (!desktop || !desktop.update) return
+				return desktop.update.onStatus((s) => setUpdate((prev) => ({ ...prev, ...s })))
+			}, [desktop])
+			// info 到达后初始化后端版本显示（不再停留「…」）
+			React.useEffect(() => {
+				if (!info || !info.dshVersion) return
+				setBackendStatus((prev) =>
+					prev.current === "…" ? { ...prev, current: info.dshVersion } : prev)
+			}, [info])
 			const checkBackend = () => {
 				if (!backend) return
 				setBackendStatus((s) => ({ ...s, stage: "checking", error: null }))
@@ -202,6 +225,10 @@ window.__ModuleLoader__.load({
 				},
 				onClick,
 			}, text)
+
+			// 裸 dsh 降级：无桥则渲染空。置于所有 hooks 之后——React 要求每次渲染
+			// hooks 数量与顺序一致，条件 return 出现在 hooks 之前会破坏规则。
+			if (!desktop) return null
 
 			const rows = [
 				{
@@ -368,7 +395,12 @@ window.__ModuleLoader__.load({
 								: backendStatus.error ? `更新失败：${backendStatus.error}`
 								: backendStatus.latest
 									? `当前 ${backendStatus.current} → 发现新版 ${backendStatus.latest}`
-									: `当前 ${backendStatus.current}`,
+									: backendStatus.checked
+										? React.createElement("span", {},
+											`当前 ${backendStatus.current}`,
+											React.createElement("span", { style: { color: OK_GREEN, marginLeft: "6px" } }, "已是最新版本"),
+										)
+										: `当前 ${backendStatus.current}`,
 						),
 					),
 					React.createElement("div", { style: { display: "flex", gap: "8px", alignItems: "center" } },
@@ -387,27 +419,45 @@ window.__ModuleLoader__.load({
 					),
 				),
 
-				// 桌壳自身更新（electron-updater）
+				// 桌壳自身更新（electron-updater）：两段式——检查只发现，
+				// 下载/安装由按钮显式触发，绝不「检查完一条龙自动更新」
 				React.createElement("div", { style: rowStyle },
 					React.createElement("div", {},
 						React.createElement("div", { style: labelStyle }, "自动更新"),
 						React.createElement("div", { style: subStyle },
-							"检测 DeepSeek Harness Desktop 新版本并自动下载安装包",
+							"检测 DeepSeek Harness Desktop 新版本；下载与安装由你手动触发",
 						),
 						React.createElement("div", { style: subStyle },
 							update.checking ? "检查中…"
 								: update.devMode ? "开发模式不支持自更新（打包版可用）"
 								: update.unsupported ? "macOS 暂不支持（需签名证书），请从 Release 页下载"
-								: update.latest ? `当前 ${info ? info.appVersion : "…"} → 发现新版 ${update.latest}`
-								: `当前 ${info ? info.appVersion : "…"}`,
+								: update.downloaded
+									? `新版 ${update.latest} 已下载就绪`
+									: update.latest
+										? update.downloading
+											? `当前 ${info ? info.appVersion : "…"} → 正在下载新版 ${update.latest}…`
+											: `当前 ${info ? info.appVersion : "…"} → 发现新版 ${update.latest}`
+										: React.createElement("span", {},
+											`当前 ${info ? info.appVersion : "…"}`,
+											update.checked
+												? React.createElement("span", { style: { color: OK_GREEN, marginLeft: "6px" } }, "已是最新版本")
+												: null,
+										),
 						),
 					),
-					React.createElement("button", {
-						style: ghostBtn,
-						onClick: check,
-						disabled: update.checking || update.unsupported || update.devMode,
-					},
-						update.checking ? "检查中" : "检查更新",
+					React.createElement("div", { style: { display: "flex", gap: "8px", alignItems: "center" } },
+						update.checking
+							? React.createElement("button", { style: ghostBtn, disabled: true }, "检查中")
+							: update.downloaded
+								? React.createElement("button", { style: btnStyle, onClick: installUpdate }, "安装更新")
+								: update.downloading
+									? React.createElement("button", { style: ghostBtn, disabled: true }, "下载中…")
+									: update.latest
+										? React.createElement("button", { style: btnStyle, onClick: downloadUpdate }, "下载更新")
+										: React.createElement("button", {
+											style: ghostBtn, onClick: check,
+											disabled: update.unsupported || update.devMode,
+										}, "检查更新"),
 					),
 				),
 			)

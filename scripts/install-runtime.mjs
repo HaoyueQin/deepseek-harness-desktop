@@ -20,7 +20,10 @@ const resources = join(root, 'resources')
 async function installIcon() {
   const outRuntime = join(resources, 'icon.png')
   const outBuild = join(root, 'build', 'icon.png')
-  if (existsSync(outRuntime) && statSync(outRuntime).size > 0) { console.log('[install-runtime] icon.png 已存在，跳过'); return }
+  // 两个产物都有效才跳过：build/icon.png（electron-builder 源）与
+  // resources/icon.png（运行时/托盘）任一缺失都重新生成。
+  const valid = (f) => existsSync(f) && statSync(f).size > 0
+  if (valid(outRuntime) && valid(outBuild)) { console.log('[install-runtime] icon.png 已存在，跳过'); return }
   // CI 无本地 fork：用 DSH_ICON_SVG 指定 favicon.svg 路径；本机默认读隔壁 fork 仓库
   const svg = process.env.DSH_ICON_SVG ?? join(root, '..', 'deepseek-harness', 'apps', 'web', 'public', 'favicon.svg')
   if (!existsSync(svg)) { console.warn(`[install-runtime] 未找到 ${svg}，跳过图标`); return }

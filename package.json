@@ -9,7 +9,7 @@
     "node": ">=22.19.0"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && tsc -p tsconfig.preload.json && node -e \"require('fs').renameSync('dist/preload.js','dist/preload.cjs')\"",
+    "build": "node -e \"require('fs').rmSync('dist/preload.js',{force:true});require('fs').rmSync('dist/preload.js.map',{force:true})\" && tsc -p tsconfig.json && tsc -p tsconfig.preload.json && node -e \"require('fs').renameSync('dist/preload.js','dist/preload.cjs')\"",
     "dev": "npm run build && electron .",
     "icons": "node scripts/icons.mjs",
     "build:runtime": "node scripts/install-runtime.mjs",

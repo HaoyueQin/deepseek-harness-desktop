@@ -101,8 +101,9 @@ export function startDsh(options: StartDshOptions): DshControl {
     const found = urlLine.push(text)
     if (found === null) return
     urlFound = true
-    // 双保险：URL 行出现后仍须 HTTP 2xx（dist 挂载完成）才视为就绪
-    waitForHttp(found, 30_000).then(
+    // 双保险：URL 行出现后仍须 HTTP 2xx（dist 挂载完成）才视为就绪。
+    // 超时用 readyTimeoutMs（调用方可配，缺省 60s）
+    waitForHttp(found, readyTimeoutMs).then(
       () => {
         settled = true
         urlResolve(found)

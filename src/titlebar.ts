@@ -41,16 +41,24 @@ export const INJECT_TITLEBAR = `(() => {
   // 常规内容之上，MAX 值会不必要地压住 dsh 任何真实弹层/Toast。
   bar.style.cssText = 'position:fixed;top:0;left:0;right:0;height:' + HEIGHT + 'px;z-index:9999;' +
     'display:flex;align-items:stretch;justify-content:flex-end;-webkit-app-region:drag'
+  // 刷新图标：Bootstrap Icons（MIT）官方 bi-arrow-clockwise 原版路径——
+  // viewBox 0 0 16 16 缩放到 10px 显示时线宽 0.94px，与相邻 1px 线框按钮协调；
+  // 实心小箭头在 10px 下仍可辨（Lucide/Material 线条箭头实测 10px 会糊成实心块）。
+  const RF = '<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">' +
+    '<path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/>' +
+    '<path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/></svg>'
   const M = '<svg width="10" height="10" viewBox="0 0 10 10"><line x1="0" y1="5" x2="10" y2="5" stroke="currentColor" stroke-width="1"/></svg>'
   const R = '<svg width="10" height="10" viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1"/></svg>'
   const T = '<svg width="10" height="10" viewBox="0 0 10 10"><rect x="0.5" y="2.5" width="7" height="7" fill="none" stroke="currentColor" stroke-width="1"/><line x1="2.5" y1="2.5" x2="2.5" y2="0.5" stroke="currentColor" stroke-width="1"/><line x1="2.5" y1="0.5" x2="9.5" y2="0.5" stroke="currentColor" stroke-width="1"/><line x1="9.5" y1="0.5" x2="9.5" y2="7.5" stroke="currentColor" stroke-width="1"/></svg>'
   const C = '<svg width="10" height="10" viewBox="0 0 10 10"><line x1="0.5" y1="0.5" x2="9.5" y2="9.5" stroke="currentColor" stroke-width="1"/><line x1="9.5" y1="0.5" x2="0.5" y2="9.5" stroke="currentColor" stroke-width="1"/></svg>'
+  const refresh = mk(RF, '刷新页面', () => window.location.reload())
   const min = mk(M, '最小化', () => window.dshDesktop.minimize())
   const max = mk(R, '最大化', () => window.dshDesktop.maximizeToggle())
   const restore = mk(T, '还原', () => window.dshDesktop.maximizeToggle())
   const close = mk(C, '关闭（隐藏到托盘）', () => window.dshDesktop.close())
   let maximized = false
   window.dshDesktop.onMaximized(s => { maximized = s; if (maximized) max.replaceWith(restore); else restore.replaceWith(max) })
-  bar.appendChild(min); bar.appendChild(max); bar.appendChild(close)
+  // 刷新按钮位于窗口控制按钮左侧（最小化左边），体验同浏览器 F5
+  bar.appendChild(refresh); bar.appendChild(min); bar.appendChild(max); bar.appendChild(close)
   document.body.appendChild(bar)
 })()`

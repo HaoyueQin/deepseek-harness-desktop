@@ -5,8 +5,9 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
-# 三平台 matrix：每 job 在对应 runner 上执行 install-runtime（下载该平台 Node +
-# npm 安装 dsh 依赖树）+ electron-builder 出包，产物挂 GitHub Release。
+# 三平台 matrix：每 job 在对应 runner 上生成图标（install-runtime）并
+# electron-builder 出包，产物挂 GitHub Release。纯壳架构：dsh 运行时不在包内，
+# 运行时 spawn 用户全局安装的 dsh CLI（见 src/dsh-locator.ts）。
 # npm registry 用 npmmirror（国内网络）；electron-builder 的组件下载用镜像。
 jobs:
   build:
