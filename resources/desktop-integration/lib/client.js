@@ -391,8 +391,10 @@ window.__ModuleLoader__.load({
 						React.createElement("div", { style: subStyle },
 							backendStatus.stage === "checking" ? "检查中…"
 								: backendStatus.stage === "updating" ? "更新中…"
-								: backendStatus.stage === "done" ? "更新完成，正在重启…"
+								// error 优先于 done：重启后端失败时 stage 为 done + error（版本已升级），
+								// 必须显示失败原因而非「更新完成，正在重启…」的永久假象
 								: backendStatus.error ? `更新失败：${backendStatus.error}`
+								: backendStatus.stage === "done" ? "更新完成，正在重启…"
 								: backendStatus.latest
 									? `当前 ${backendStatus.current} → 发现新版 ${backendStatus.latest}`
 									: backendStatus.checked

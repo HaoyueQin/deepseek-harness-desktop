@@ -100,11 +100,13 @@ export async function checkForUpdates(): Promise<UpdateStatus> {
     // 与「无更新」区分，UI 显示提示而非误导为最新版
     return { ...current, unsupported: true }
   }
-  // 已下载完成的更新：手动再查直接返回现状，避免重复下载同一安装包
-  if (current.downloaded) return { ...current }
+  // 已下载完成/下载进行中：手动再查直接返回现状——下载中重查会让
+  // checking-for-update 清掉 downloading，UI 回退成「下载更新」可重复触发
+  if (current.downloaded || current.downloading) return { ...current }
   try {
     await autoUpdater.checkForUpdates()
-    current.checked = true // 兜底：事件回调未发（异常路径）也标记已检查
+    // 不设 checked 兜底：检查结果只信事件回调（available/not-available）——
+    // 异常路径宁可显示「当前版本」也不误报「已是最新版本」
   } catch (err) {
     log(`updater: 手动检查失败 ${String(err)}`)
   }
