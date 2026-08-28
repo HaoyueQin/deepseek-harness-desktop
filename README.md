@@ -19,30 +19,40 @@ English | [简体中文](README.zh.md)
 
 ### Backend (dsh) integration
 
-- **Zero-intrusion wrapper** — spawns your globally-installed `dsh` CLI as a child process (`node <dsh>/lib/bin.js web`), loads its localhost UI; the harness source is never modified. One dsh install shared by terminal and desktop — plugins, settings, credentials, sessions and versions always match (`DSH_HOME`, default `~/.dsh`)
-- **First-run setup page** — no dsh detected? The app offers a copyable install command or a one-click in-app install, then boots automatically
-- **In-app dsh updates** — Settings → Desktop shows your dsh version; one click checks npm for the latest release and upgrades it (no terminal needed)
+- **Dual backend sources** — run the `dsh` from your npm global install (stable channel) or from a local git checkout (any version, including pre-releases), switchable in Settings. `Auto` mode prefers npm and falls back to the source directory; if the chosen source breaks, the shell falls back to the other one and tells you why
+- **Zero-intrusion wrapper** — spawns the chosen `dsh` as a child process (`dsh web`), loads its localhost UI; the harness source is never modified. One dsh shared by terminal and desktop — plugins, settings, credentials, sessions and versions always match (`DSH_HOME`, default `~/.dsh`)
+- **Source mode without terminals** — pick a folder and the shell drives everything: clone the official repo, run `pnpm install` + `pnpm build` with live logs, validate the result, then boot. The only prerequisites are `git` and `pnpm` on PATH
+- **Source-mode updates like npm's** — check the upstream tags, see "current → latest", then one click checks out the tag, reinstalls, rebuilds and restarts the backend. Dirty worktrees are refused with a clear message
+- **One proxy for every update channel** — a single proxy setting covers git (clone/fetch), pnpm (install/build) and npm (check/upgrade); git uses per-invocation config, never touching your global gitconfig
+- **First-run setup page** — no dsh detected? The app offers a copyable install command, a one-click in-app install, or the source-mode path (clone + prepare), then boots automatically
+- **In-app dsh updates (npm channel)** — Settings → Desktop shows your dsh version; one click checks npm for the latest release and upgrades it (no terminal needed)
 
 ### Desktop experience
 
 - **Frameless immersive window** — no native title bar; the custom window controls (minimize / maximize / close) blend into the page with DeepSeek brand-blue hover and follow the light/dark theme
 - **Always-on tray** — closing the window hides to the system tray instead of quitting; the backend keeps running for instant resume
 - **Auto-start at login** — toggle in the tray menu (Windows/macOS native; Linux via XDG autostart)
-- **Configurable port policy** — fixed `3080` by default (same as `dsh web`, giving a stable page origin so browser-side preferences survive restarts), switchable to a custom port or random in Settings; falls back to a random port with a notice when the fixed port is taken. Note: while the shell lives in the tray it holds the port — run `dsh web --port <other>` in a terminal to coexist; after upgrading from older releases, browser-side preferences (e.g. chat width) need one manual re-set, then persist across restarts
+- **Configurable port policy** — fixed `3080` by default (same as `dsh web`, giving a stable page origin so browser-side preferences survive restarts), switchable to a custom port or random in Settings; falls back to a random port with a notice when the fixed port is taken. Note: while the shell lives in the tray it holds the port — run `dsh web --port <other>` in a terminal to coexist
 - **Single instance** — launching again focuses the existing window
 - **Full plugin freedom** — dynamic plugins (`cordis_define`/`cordis_run`), `$DSH_HOME/cordis.patch.yml`, and the npm plugin ecosystem all work exactly as in the web edition
-- **Desktop settings section** — the app's Settings page gains a "Desktop" tab (styled to match the harness UI): dsh version card (check & one-click upgrade), shell auto-update check, auto-start toggle, launch-minimized toggle, About card — all in sync with the tray menu
+- **Desktop settings section** — the app's Settings page gains a "Desktop" tab (styled to match the harness UI): backend source card (mode, directory validation, clone/prepare, proxy), dsh version card (source-aware check & update with live logs), shell self-update check, auto-start toggle, launch-minimized toggle, port policy, About card
+- **Conversation width, natively** — on dsh ≥ 0.1.2-alpha.1 the shell stays out of the way and the upstream drag handles do the job; on older backends the shell replicates the same handles (same range, same persistence key), so upgrades hand your preference over seamlessly
 - **Shell self-update (two-step)** — checks silently 15s after launch (detection only, never auto-downloads): a "Download update" button appears in Settings, switching to "Install update" once downloaded — every step is triggered by you. Windows installs by quitting and running the installer (unsigned builds can't install silently); Linux AppImage replaces itself automatically; macOS excluded (needs signing)
 
-## Screenshot
+## Screenshots
 
 ![DeepSeek Harness Desktop main window](./assets/screenshots/main-window.png)
+
+![Settings — general desktop options](./assets/screenshots/settings-desktop-1.png)
+
+![Settings — backend source, proxy and updates](./assets/screenshots/settings-desktop-2.png)
 
 ## Install
 
 ### Prerequisites
 
-- **Node.js ≥ 22** and the `dsh` CLI (`npm i -g @deepseek-ai/dsh`) — if missing, the app shows a setup page with a copyable command or a one-click in-app install
+- **npm channel (default)**: Node.js ≥ 22 and the `dsh` CLI (`npm i -g @deepseek-ai/dsh`) — if missing, the app shows a setup page with a copyable command or a one-click in-app install
+- **Source channel (optional)**: additionally requires `git` and `pnpm` on PATH; the shell clones the repo and runs `pnpm install` + `pnpm build` for you
 
 ### Download
 
@@ -56,7 +66,7 @@ Download the installer for your platform from the [Releases](https://github.com/
 
 ### First launch
 
-1. Start the app — it locates your `dsh` CLI, boots `dsh web` in the background and opens the UI at its ready state (no dsh? you'll see the setup page first)
+1. Start the app — it resolves your backend (npm by default), boots `dsh web` in the background and opens the UI at its ready state (no dsh? you'll see the setup page first)
 2. Dismiss the **预览版 / preview** notice
 3. Open **Settings → Models** and configure your LLM provider (API key, model, base URL) — same as the web edition
 4. Pick a workspace and start chatting
@@ -71,7 +81,7 @@ Download the installer for your platform from the [Releases](https://github.com/
 
 ```sh
 npm install        # installs electron 43 + toolchain
-npm run dev        # dev mode: system Node + your globally-installed dsh CLI
+npm run dev        # dev mode: system Node + your chosen backend (npm or source dir)
 ```
 
 > **electron binary download stuck?** (you see `Downloading Electron binary...` forever)
@@ -96,28 +106,30 @@ The CI workflow (`.github/workflows/release.yml`) builds all three platforms on 
 
 ## Data & logs
 
-- **Data** (`DSH_HOME`): defaults to `~/.dsh` (honors the `$DSH_HOME` environment variable) — profiles, sessions, storage
+- **Data** (`DSH_HOME`): defaults to `~/.dsh` (honors the `$DSH_HOME` environment variable) — profiles, sessions, storage; shared by both backend sources
 - **Logs**: `<userData>/logs/main.log`
-- **dsh CLI**: the shell spawns your globally-installed `dsh` (located via PATH + `npm root -g`); upgrade it from Settings → Desktop or with `npm i -g @deepseek-ai/dsh`
+- **dsh**: the shell runs the backend from your chosen source — npm global (located via PATH + `npm root -g`, upgradable from Settings → Desktop) or a local checkout (validated for `apps/cli`, `node_modules/tsx` and the built web dist before launch)
 
 ## Project layout
 
 ```
 src/
-  main.ts          app lifecycle: single-instance lock, window, tray, dsh orchestration, setup page
-  paths.ts         dev/prod resource resolution (icon, preload, desktop plugin patch)
-  dsh-locator.ts   locate the user's dsh CLI (PATH check + npm root -g) + semver compare
-  dsh-updater.ts   settings-card backend: check npm latest / one-click npm i -g upgrade
-  settings.ts      shell settings (userData/settings.json — launch-minimized, port policy)
-  updater.ts       electron-updater (Windows guided / Linux AppImage auto)
-  dsh/spawn.ts     spawn dsh web --port <policy port> --patch; parse stdout URL line; graceful stop
-  dsh/ready.ts     HTTP readiness probe
-  tray.ts          tray menu (open / auto-start / quit) + autostart sync
-  autostart.ts     auto-start (native on win/mac; XDG file on linux)
-  preload.ts       contextBridge bridge (window controls + desktop IPC; compiled to CJS)
+  main.ts               app lifecycle: single-instance lock, window, tray, backend resolution, setup page
+  paths.ts              dev/prod resource resolution (icon, preload, desktop plugin patch)
+  dsh-locator.ts        locate the npm-global dsh CLI (PATH check + npm root -g) + semver compare
+  dsh-source.ts         git-checkout source: validation (manifest/tsx/web dist), tag parsing, entry args
+  dsh-source-updater.ts source-channel updates: fetch tags → clean tree → checkout → pnpm install/build → restart
+  dsh-updater.ts        npm-channel backend: check npm latest / one-click npm i -g upgrade
+  settings.ts           shell settings (userData/settings.json — backend source, source dir, proxy, port policy)
+  updater.ts            electron-updater (Windows guided / Linux AppImage auto)
+  dsh/spawn.ts          spawn dsh web --port <policy port> --patch; parse stdout URL line; graceful stop
+  dsh/ready.ts          HTTP readiness probe (any status — the URL may carry a process token since 0.1.2-alpha.1)
+  tray.ts               tray menu (open / auto-start / quit) + autostart sync
+  autostart.ts          auto-start (native on win/mac; XDG file on linux)
+  preload.ts            contextBridge bridge (window controls + desktop IPC; compiled to CJS)
 scripts/
   install-runtime.mjs   generates resources/icon.png at build time (from upstream favicon)
-  smoke.mjs             headless smoke test: spawn dsh, assert URL line + HTTP 200
+  smoke.mjs             headless smoke test: spawn dsh, assert URL line + HTTP response
 resources/
   desktop-integration/  settings "Desktop" section plugin (dsh browser half)
   desktop-patch.yml     shell-injected patch mounting the plugin
@@ -125,11 +137,12 @@ assets/
   wordmark.svg          project wordmark
 ```
 
-## Known limitations (v1)
+## Known limitations (v1.x)
 
-- Requires Node.js ≥ 22 and a globally-installed `dsh` CLI (the setup page offers one-click install); the shell no longer bundles a runtime — installer is small, but dsh itself must be present
+- Requires Node.js ≥ 22; the npm channel needs a globally-installed `dsh` CLI (the setup page offers one-click install), the source channel needs `git` + `pnpm` — the shell bundles no runtime either way, so the installer stays small
 - macOS builds are unsigned — Gatekeeper requires right-click → Open on first run; macOS has no auto-update (needs a signing certificate)
 - Windows auto-update is guided (downloads then runs the installer) rather than silent, due to the unsigned build
+- The source channel checks out release tags in detached HEAD — switch your branch back manually if you develop in the same clone
 
 ## Feedback
 
