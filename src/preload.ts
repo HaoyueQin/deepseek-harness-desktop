@@ -27,7 +27,15 @@ contextBridge.exposeInMainWorld('dshDesktop', {
       ipcRenderer.invoke('dsh-settings:get-port-policy'),
     set: (v: number | 'random'): Promise<void> => ipcRenderer.invoke('dsh-settings:set-port-policy', v),
   },
-  getInfo: (): Promise<{ appVersion: string; dshVersion: string; dshHome: string; logDir: string }> =>
+  getInfo: (): Promise<{
+    appVersion: string
+    dshVersion: string
+    dshHome: string
+    logDir: string
+    backendSource: 'npm-global' | 'git-local' | null
+    sourceDir: string | null
+    notice: string | null
+  }> =>
     ipcRenderer.invoke('dsh-app:get-info'),
   openPath: (p: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('dsh-app:open-path', p),
@@ -50,6 +58,19 @@ contextBridge.exposeInMainWorld('dshDesktop', {
       ipcRenderer.on('dsh-backend:update-status', handler)
       return () => ipcRenderer.removeListener('dsh-backend:update-status', handler)
     },
+    // 后端来源配置（npm 全局 / git 源码目录）与生效操作
+    getConfig: (): Promise<unknown> => ipcRenderer.invoke('dsh-backend:get-config'),
+    setConfig: (patch: { mode?: string; sourceDir?: string; networkProxy?: string }): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('dsh-backend:set-config', patch),
+    pickDir: (): Promise<string | null> => ipcRenderer.invoke('dsh-backend:pick-dir'),
+    validate: (dir: string): Promise<unknown> => ipcRenderer.invoke('dsh-backend:validate', dir),
+    restart: (): Promise<{ ok: boolean; busy?: boolean; error?: string }> =>
+      ipcRenderer.invoke('dsh-backend:restart'),
+    onNotice: (cb: (notice: string | null) => void): () => void => {
+      const handler = (_event: unknown, n: string | null): void => cb(n)
+      ipcRenderer.on('dsh-backend:notice', handler)
+      return () => ipcRenderer.removeListener('dsh-backend:notice', handler)
+    },
   },
   setup: {
     copyCommand: (): Promise<boolean> => ipcRenderer.invoke('dsh-setup:copy-command'),
@@ -60,6 +81,20 @@ contextBridge.exposeInMainWorld('dshDesktop', {
     onExit: (cb: (code: number | null) => void): void => {
       ipcRenderer.on('dsh-setup:install-exit', (_event, code: number | null) => cb(code))
     },
-    recheck: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('dsh-setup:recheck'),
+    recheck: (): Promise<{ ok: boolean; busy?: boolean }> => ipcRenderer.invoke('dsh-setup:recheck'),
+    // 源码安装路径（引导页「从源码运行」）：选目录 / 克隆 / 准备环境
+    pickSourceDir: (): Promise<string | null> => ipcRenderer.invoke('dsh-backend:pick-dir'),
+    cloneSource: (dir: string): Promise<{ ok: boolean; busy?: boolean; error?: string }> =>
+      ipcRenderer.invoke('dsh-source:clone', dir),
+    prepareSource: (dir: string): Promise<{ ok: boolean; busy?: boolean; error?: string }> =>
+      ipcRenderer.invoke('dsh-source:prepare', dir),
+    onSourceOutput: (cb: (t: string) => void): () => void => {
+      const handler = (_event: unknown, t: string): void => cb(t)
+      ipcRenderer.on('dsh-source:log', handler)
+      return () => ipcRenderer.removeListener('dsh-source:log', handler)
+    },
+    onSourceExit: (cb: (code: number | null) => void): void => {
+      ipcRenderer.on('dsh-source:exit', (_event, code: number | null) => cb(code))
+    },
   },
 })

@@ -26,3 +26,11 @@ test('跨 minor 的 prerelease 比较', () => {
   assert.equal(compareVersions('0.1.1-rc.1', '0.1.0-rc.8') > 0, true)
   assert.equal(compareVersions('0.1.0-rc.8', '0.1.1-rc.1') < 0, true)
 })
+
+test('git tag 语义（剥离 dsh-v 前缀后比较，源码更新器用）', () => {
+  assert.equal(compareVersions('0.1.2-alpha.1', '0.1.1-rc.2') > 0, true)
+  assert.equal(compareVersions('0.1.2-alpha.1', '0.1.2') < 0, true)
+  assert.equal(compareVersions('0.1.2-alpha.1', '0.1.2-alpha.1'), 0)
+  assert.equal(compareVersions('0.1.2-alpha.2', '0.1.2-alpha.1') > 0, true)
+  assert.equal(compareVersions('0.1.1-alpha.1', '0.1.1-rc.1') < 0, true) // 字典序 alpha < rc，同 semver 惯例
+})

@@ -4,8 +4,9 @@
  *
  * 端口：默认固定 3080（与 dsh web 默认一致，页面 origin 稳定，浏览器
  * localStorage 侧的设置跨重启保留），被占用时由调用方降级 --port 0。
- * 无论固定或随机，实际地址都从 stdout 行 "dsh web: http://127.0.0.1:<port>"
- * 解析——这是 dsh 官方给 supervisor 的通道（源码注释：
+ * 无论固定或随机，实际地址都从 stdout 行 "dsh web: http://127.0.0.1:<port>[…]"
+ * 解析（alpha.1+ 带 /?token=，0.1.2 起需整串使用以完成 cookie 换取）——
+ * 这是 dsh 官方给 supervisor 的通道（源码注释：
  * "The URL line is a readiness signal: supervisors RPC as soon as they observe it"）。
  */
 
@@ -38,6 +39,10 @@ export interface StartDshOptions {
   nodePath: string
   dshBin: string
   dshHome: string
+  /** node 前置参数（源码来源为 ['--import', 'tsx/esm']；npm 来源省略）。 */
+  nodeArgs?: string[]
+  /** 子进程 cwd（源码来源 = 仓库根；npm 来源省略，继承壳的 cwd）。 */
+  cwd?: string
   /** 日志回调（stdout/stderr 与生命周期事件）。 */
   onLog: (line: string) => void
   /** 从 spawn 到 HTTP ready 的总超时。首启 profile 初始化较慢，默认 60s。 */
@@ -65,11 +70,11 @@ export interface DshControl {
 }
 
 export function startDsh(options: StartDshOptions): DshControl {
-  const { nodePath, dshBin, dshHome, onLog, readyTimeoutMs = 60_000, noOpen = false, port = 0 } = options
+  const { nodePath, dshBin, dshHome, nodeArgs = [], cwd, onLog, readyTimeoutMs = 60_000, noOpen = false, port = 0 } = options
 
   // 桌面集成插件 patch（存在则挂载设置页「桌面」分区）。
-  // 顺序关键：--patch 是 launcher（web 子命令）的 option，必须位于透传参数
-  // （--port）之前；放后面会被 commander 归入透传 args 导致 unknown option。
+  // 顺序关键：--patch 是 web 子命令的 option（commander 拒绝它出现在 'web'
+  // 之前），必须位于透传参数（--port）之前。
   const patchArgs: string[] = []
   const patchFile = desktopPatchPath()
   if (existsSync(patchFile)) patchArgs.push('--patch', patchFile)
@@ -77,7 +82,8 @@ export function startDsh(options: StartDshOptions): DshControl {
   // --no-open（dsh 0.1.0-rc.8+ 的 web 透传 flag）：dsh web 默认会用系统
   // 浏览器打开就绪地址，桌面端自带窗口，必须关掉，否则每次启动都多弹
   // 一个浏览器标签。放透传区（--port 之后），不影响 stdout URL 就绪行。
-  const child = spawn(nodePath, [dshBin, 'web', ...patchArgs, '--port', String(port), ...(noOpen ? ['--no-open'] : [])], {
+  const child = spawn(nodePath, [...nodeArgs, dshBin, 'web', ...patchArgs, '--port', String(port), ...(noOpen ? ['--no-open'] : [])], {
+    cwd,
     env: { ...process.env, DSH_HOME: dshHome },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,

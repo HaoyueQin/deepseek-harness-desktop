@@ -14,8 +14,14 @@ import { join } from 'node:path'
 export interface LocatedDsh {
   /** `dsh --version` 输出，如 "0.1.1-rc.1"。 */
   version: string
-  /** 全局安装的 bin.js 绝对路径（供系统 node 直接执行）。 */
+  /** 可执行入口：npm 来源为全局 bin.js；源码来源为 apps/cli/src/bin.ts。 */
   binJs: string
+  /** 来源类型：npm 全局安装 / 本地 git 源码目录。 */
+  source: 'npm-global' | 'git-local'
+  /** node 的前置参数（源码来源为 ['--import', 'tsx/esm']，npm 来源省略）。 */
+  nodeArgs?: string[]
+  /** 子进程 cwd（源码来源 = 仓库根，tsx/esm 从 cwd 解析；npm 来源省略）。 */
+  cwd?: string
 }
 
 function run(cmd: string, args: string[]): { ok: boolean; out: string } {
@@ -39,7 +45,7 @@ export function locateDsh(): LocatedDsh | null {
   if (!root.ok || root.out === '') return null
   const binJs = join(root.out, '@deepseek-ai', 'dsh', 'lib', 'bin.js')
   if (!existsSync(binJs)) return null
-  return { version: ver.out, binJs }
+  return { version: ver.out, binJs, source: 'npm-global' }
 }
 
 /**

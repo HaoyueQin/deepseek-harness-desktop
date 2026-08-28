@@ -9,7 +9,26 @@ import { join } from 'node:path'
 /** 监听端口策略：固定端口号，或 'random'（每次启动随机分配）。 */
 export type PortPolicy = number | 'random'
 
-interface ShellSettings { launchMinimized?: boolean; portPolicy?: PortPolicy }
+/** 后端来源：auto（npm 优先、源码兜底）/ 显式 npm / 显式源码目录。 */
+export type BackendSource = 'auto' | 'npm' | 'source'
+
+interface ShellSettings {
+  launchMinimized?: boolean
+  portPolicy?: PortPolicy
+  backendSource?: BackendSource
+  sourceDir?: string
+  networkProxy?: string
+}
+
+/** backendSource 归一化：非法值回落 'auto'。 */
+export function normalizeBackendSource(v: unknown): BackendSource {
+  return v === 'npm' || v === 'source' ? v : 'auto'
+}
+
+/** 字符串归一化（sourceDir/networkProxy）：非字符串回落 ''。 */
+function normalizeText(v: unknown): string {
+  return typeof v === 'string' ? v.trim() : ''
+}
 
 /**
  * 端口策略归一化：'random' 保留；1024–65535 整数视为固定端口；
@@ -68,4 +87,28 @@ export function getPortPolicy(): PortPolicy {
 
 export function setPortPolicy(v: unknown): void {
   write({ ...read(), portPolicy: normalizePortPolicy(v) })
+}
+
+export function getBackendSource(): BackendSource {
+  return normalizeBackendSource(read().backendSource)
+}
+
+export function setBackendSource(v: unknown): void {
+  write({ ...read(), backendSource: normalizeBackendSource(v) })
+}
+
+export function getSourceDir(): string {
+  return normalizeText(read().sourceDir)
+}
+
+export function setSourceDir(v: unknown): void {
+  write({ ...read(), sourceDir: normalizeText(v) })
+}
+
+export function getNetworkProxy(): string {
+  return normalizeText(read().networkProxy)
+}
+
+export function setNetworkProxy(v: unknown): void {
+  write({ ...read(), networkProxy: normalizeText(v) })
 }

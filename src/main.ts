@@ -12,7 +12,9 @@ import { createTray, syncTrayAutostart, type TrayHandlers } from './tray.js'
 import { dshHomeDir, iconPath, preloadPath, resourcesDir } from './paths.js'
 import {
   getLaunchMinimized, setLaunchMinimized, getPortPolicy, setPortPolicy,
-  type PortPolicy,
+  getBackendSource, setBackendSource, getSourceDir, setSourceDir,
+  getNetworkProxy, setNetworkProxy,
+  type PortPolicy, type BackendSource,
 } from './settings.js'
 import { isAutostartEnabled, setAutostart } from './autostart.js'
 import {
@@ -23,13 +25,18 @@ import {
   checkBackendUpdate, initBackendUpdater,
   onBackendUpdateStatus, setBackendRestartHandler, updateBackend,
 } from './dsh-updater.js'
+import {
+  checkSourceUpdate, initSourceUpdater, isSourceUpdating, onSourceUpdateStatus,
+  setSourceLogSink, setSourceUpdateHooks, updateSource,
+} from './dsh-source-updater.js'
 import { locateDsh, compareVersions, type LocatedDsh } from './dsh-locator.js'
+import { locateSourceDsh, validateSourceDir, OFFICIAL_REPO_URL } from './dsh-source.js'
 // electron-updater 的 update-downloaded 事件带 downloadedFile（本地完整路径），
 // UpdateInfo.path 只是 latest.yml 里的相对文件名，spawn 会 ENOENT。
 import type { UpdateDownloadedEvent } from 'electron-updater'
 import { join } from 'node:path'
-import { copyFileSync, mkdirSync, renameSync } from 'node:fs'
-import { spawn } from 'node:child_process'
+import { copyFileSync, existsSync, mkdirSync, readdirSync, renameSync } from 'node:fs'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { desktopPluginDir } from './paths.js'
 import { log } from './log.js'
 import { INJECT_TITLEBAR } from './titlebar.js'
@@ -37,8 +44,13 @@ import { INJECT_TITLEBAR } from './titlebar.js'
 let win: BrowserWindow | null = null
 let dsh: DshControl | null = null
 let quitting = false
-/** 用户已装的 dsh（纯壳架构：壳不内置运行时，spawn 用户 PATH 里的 CLI）。 */
+/** 生效后端（npm 全局或 git 源码目录；纯壳架构：壳不内置运行时）。 */
 let locatedDsh: LocatedDsh | null = null
+/**
+ * 后端来源回退提示（生效来源 ≠ 用户偏好来源时的原因说明）。经
+ * dsh-app:get-info 拉取 + dsh-backend:notice 推送到达设置页提示条。
+ */
+let backendNotice: string | null = null
 /** 本次会话实际监听端口（固定或随机，从 URL 行解析）；null = 尚未启动。 */
 let dshPortActual: number | null = null
 /** 本次是否因配置的固定端口被占而降级随机（页面 localStorage 侧设置本次不保留）。 */
@@ -49,6 +61,46 @@ let dshPortDegraded = false
  */
 function readDshVersion(): string {
   return locatedDsh?.version ?? 'unknown'
+}
+
+/** 推送回退提示到设置页提示条（插件也可经 get-info 拉取）。 */
+function pushBackendNotice(): void {
+  if (!quitting) win?.webContents.send('dsh-backend:notice', backendNotice)
+}
+
+/**
+ * 解析生效后端：auto = npm 优先、源码兜底；显式选择优先，所选源失效时
+ * 自动回退另一可用来源并生成原因（backendNotice）。两者皆不可用返回 null。
+ * 校验只做纯 fs 检查（checkPnpm:false），不付 spawn 开销。
+ */
+function resolveBackend(): { located: LocatedDsh; notice?: string } | null {
+  const npm = locateDsh()
+  const pref = getBackendSource()
+  const dir = getSourceDir()
+  const srcCheck = dir !== '' ? validateSourceDir(dir) : null
+  const src = dir !== '' ? locateSourceDsh(dir) : null
+
+  if (pref === 'npm') {
+    if (npm !== null) return { located: npm }
+    if (src !== null) {
+      return { located: src, notice: `未检测到 npm 全局 dsh，已回退到源码目录 ${dir}` }
+    }
+    return null
+  }
+  if (pref === 'source') {
+    if (src !== null) return { located: src }
+    if (npm !== null) {
+      const reason = dir === ''
+        ? '未配置源码目录'
+        : `源码目录校验失败（${srcCheck?.missing.join('；') ?? '未知原因'}）`
+      return { located: npm, notice: `${reason}，已回退到 npm 全局版 ${npm.version}` }
+    }
+    return null
+  }
+  // auto：npm 优先（稳定渠道），静默回退源码（设计内行为，不提示）
+  if (npm !== null) return { located: npm }
+  if (src !== null) return { located: src }
+  return null
 }
 
 // 网页级窗口控制（win/linux frameless 用）：preload 注入的控制条经 IPC 调用。
@@ -110,6 +162,10 @@ function registerAppIpc(): void {
     dshVersion: readDshVersion(),
     dshHome: dshHomeDir(),
     logDir: join(app.getPath('userData'), 'logs'),
+    // 后端来源（null = 尚未成功定位）：'npm-global' | 'git-local'
+    backendSource: locatedDsh?.source ?? null,
+    sourceDir: getSourceDir() || null,
+    notice: backendNotice,
   }))
   ipcMain.handle('dsh-app:open-path', async (_event, p: unknown) => {
     // 白名单：只允许打开 DSH_HOME 或日志目录
@@ -123,9 +179,147 @@ function registerAppIpc(): void {
   // 两段式更新：下载/安装由设置页按钮显式触发（updater 内部绝不自动下载安装）
   ipcMain.handle('dsh-update:download', () => downloadUpdate())
   ipcMain.handle('dsh-update:install', () => installUpdate())
-  // 后端（用户已装的 dsh CLI）版本检测与一键升级
-  ipcMain.handle('dsh-backend:check', () => checkBackendUpdate())
-  ipcMain.handle('dsh-backend:update', () => updateBackend())
+  // 后端（用户已装的 dsh）版本检测与升级：按生效来源分发到 npm / 源码更新器
+  ipcMain.handle('dsh-backend:check', () => locatedDsh?.source === 'git-local' ? checkSourceUpdate() : checkBackendUpdate())
+  ipcMain.handle('dsh-backend:update', () => {
+    if (locatedDsh?.source === 'git-local') {
+      if (sourceBusy) {
+        return Promise.resolve({ current: '', latest: null, stage: 'error', error: '克隆/准备环境进行中，请稍候' })
+      }
+      return updateSource()
+    }
+    return updateBackend()
+  })
+  // 后端来源配置：读取（含源码目录校验结果）/保存/选目录/重启生效
+  ipcMain.handle('dsh-backend:get-config', () => {
+    const dir = getSourceDir()
+    return {
+      mode: getBackendSource(),
+      sourceDir: dir,
+      networkProxy: getNetworkProxy(),
+      validation: dir === '' ? null : validateSourceDir(dir, { checkPnpm: true }),
+    }
+  })
+  ipcMain.handle('dsh-backend:set-config', (_event, patch: unknown) => {
+    if (typeof patch !== 'object' || patch === null) return { ok: false, error: 'invalid' }
+    const p = patch as { mode?: unknown; sourceDir?: unknown; networkProxy?: unknown }
+    if (p.mode !== undefined) setBackendSource(p.mode)
+    if (p.sourceDir !== undefined) setSourceDir(p.sourceDir)
+    if (p.networkProxy !== undefined) setNetworkProxy(p.networkProxy)
+    return { ok: true }
+  })
+  ipcMain.handle('dsh-backend:pick-dir', async () => {
+    if (win === null) return null
+    const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'], title: '选择 dsh 源码目录' })
+    return r.canceled || r.filePaths.length === 0 ? null : r.filePaths[0]
+  })
+  // 任意目录的即时校验（设置页输入未保存路径时预检）
+  ipcMain.handle('dsh-backend:validate', (_event, dir: unknown) => {
+    if (typeof dir !== 'string' || dir.trim() === '') return null
+    return validateSourceDir(dir, { checkPnpm: true })
+  })
+  // 重启后端（来源/版本变更后生效）；restartEffective 内部自带 stop+resolve
+  let restarting = false
+  ipcMain.handle('dsh-backend:restart', async () => {
+    if (restarting || locatedDsh === null) return { ok: false, busy: restarting }
+    restarting = true
+    try {
+      await restartEffectiveBackend()
+      return { ok: true }
+    } catch (err) {
+      log(`dsh-backend:restart 失败 ${String(err)}`)
+      return { ok: false, error: String(err) }
+    } finally {
+      restarting = false
+    }
+  })
+}
+
+/**
+ * 源码来源 IPC：克隆官方仓库 / 准备环境（pnpm install + build）。
+ * 实时输出走 dsh-source:log / dsh-source:exit（与源码更新器共用通道，
+ * 由 setSourceLogSink 统一转发——两者不会同时运行，见 sourceBusy 互斥）。
+ */
+function registerSourceIpc(): void {
+  ipcMain.handle('dsh-source:clone', (_event, dir: unknown) => {
+    if (typeof dir !== 'string' || dir.trim() === '') return { ok: false, error: 'invalid' }
+    if (sourceBusy || isSourceUpdating()) return { ok: false, busy: true }
+    const target = dir.trim()
+    if (existsSync(target) && readdirSync(target).length > 0) {
+      return { ok: false, error: '目标目录非空，无法克隆到该位置' }
+    }
+    sourceBusy = true
+    const proxy = getNetworkProxy()
+    const globalArgs = proxy === '' ? [] : ['-c', `http.proxy=${proxy}`, '-c', `https.proxy=${proxy}`]
+    const push = (t: string): void => { if (!quitting) win?.webContents.send('dsh-source:log', t) }
+    const child = spawn('git', ['clone', ...globalArgs, OFFICIAL_REPO_URL, target], { windowsHide: true })
+    child.stdout?.on('data', (d: Buffer) => push(d.toString()))
+    child.stderr?.on('data', (d: Buffer) => push(d.toString()))
+    child.on('error', (err) => {
+      sourceBusy = false
+      push(`\r\n[shell] ✗ git 启动失败：${String(err)}（请确认已安装 git）\r\n`)
+      if (!quitting) win?.webContents.send('dsh-source:exit', 1)
+    })
+    child.on('exit', (code) => {
+      sourceBusy = false
+      if (quitting) return
+      if (code === 0) setSourceDir(target) // 克隆成功即记住目录，recheck 即可发现
+      push(code === 0 ? '\r\n[shell] ✓ 克隆完成\r\n' : `\r\n[shell] ✗ 克隆失败（退出码 ${String(code)}）\r\n`)
+      win?.webContents.send('dsh-source:exit', code)
+    })
+    return { ok: true }
+  })
+  ipcMain.handle('dsh-source:prepare', (_event, dir: unknown) => {
+    if (typeof dir !== 'string' || dir.trim() === '') return { ok: false, error: 'invalid' }
+    if (sourceBusy || isSourceUpdating()) return { ok: false, busy: true }
+    const target = dir.trim()
+    sourceBusy = true
+    const push = (t: string): void => { if (!quitting) win?.webContents.send('dsh-source:log', t) }
+    const proxy = getNetworkProxy()
+    const env = proxy === '' ? process.env : { ...process.env, HTTP_PROXY: proxy, HTTPS_PROXY: proxy, NO_PROXY: '127.0.0.1,localhost' }
+    const isWin = process.platform === 'win32'
+    // pnpm 是 .cmd shim，经 ComSpec /c 解析；参数为固定字面量
+    const runPnpm = (args: string[]): ChildProcess => spawn(
+      isWin ? process.env.ComSpec ?? 'cmd' : 'pnpm',
+      isWin ? ['/d', '/s', '/c', ['pnpm', ...args].join(' ')] : args,
+      { cwd: target, env, windowsHide: true },
+    )
+    const runStep = (args: string[], label: string, done: () => void): void => {
+      push(`\r\n[shell] ${label}\r\n`)
+      const child = runPnpm(args)
+      child.stdout?.on('data', (d: Buffer) => push(d.toString()))
+      child.stderr?.on('data', (d: Buffer) => push(d.toString()))
+      child.on('error', (err: Error) => {
+        sourceBusy = false
+        push(`\r\n[shell] ✗ pnpm 启动失败：${String(err)}（请确认已安装 pnpm）\r\n`)
+        if (!quitting) win?.webContents.send('dsh-source:exit', 1)
+      })
+      child.on('exit', (code: number | null) => {
+        if (quitting) return
+        if (code !== 0) {
+          sourceBusy = false
+          push(`\r\n[shell] ✗ ${label}失败（退出码 ${String(code)}）\r\n`)
+          win?.webContents.send('dsh-source:exit', code)
+          return
+        }
+        done()
+      })
+    }
+    runStep(['install'], '正在安装依赖（pnpm install，可能需要数分钟）', () => {
+      runStep(['build'], '正在构建（pnpm build：全部包 lib + 前端 dist）', () => {
+        sourceBusy = false
+        const v = validateSourceDir(target)
+        if (!v.ok) {
+          push(`\r\n[shell] ✗ 准备后校验仍失败：${v.missing.join('；')}\r\n`)
+          win?.webContents.send('dsh-source:exit', 1)
+          return
+        }
+        push(`\r\n[shell] ✓ 准备完成（dsh ${v.version}），点「重新检测」启动\r\n`)
+        win?.webContents.send('dsh-source:exit', 0)
+      })
+    })
+    return { ok: true }
+  })
 }
 
 const LOADING_HTML = `<!doctype html>
@@ -159,6 +353,12 @@ const SETUP_HTML = `<!doctype html>
   pre { background: #111; border: 1px solid #333; border-radius: 8px; padding: 12px;
         max-height: 200px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
         font-size: 12px; color: #9aa4b2; display: none; text-align: left; }
+  hr { border: none; border-top: 1px solid #333; margin: 24px 0; }
+  h2 { font-size: 15px; margin: 0 0 8px; }
+  .hint { font-size: 12px; color: #6b7686; }
+  input { flex: 1; background: #111; border: 1px solid #333; border-radius: 6px;
+          padding: 8px 10px; color: #e8e8e8; font-size: 13px; }
+  .row { display: flex; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
 </style></head>
 <body><div class="box">
   <h1>未检测到 DeepSeek Harness CLI（dsh）</h1>
@@ -169,6 +369,17 @@ const SETUP_HTML = `<!doctype html>
   <button id="installBtn" onclick="install()">一键安装</button>
   <button class="ghost" onclick="recheck()">我已安装，重新检测</button>
   <pre id="log"></pre>
+  <hr>
+  <h2>从源码运行（进阶）</h2>
+  <p>不用 npm 全局安装，直接使用本地 dsh 源码仓库启动（需要 git 与 pnpm；克隆或构建可能需要代理，可在设置页配置）。</p>
+  <div class="cmd"><input id="srcdir" placeholder="选择源码目录（将克隆/构建到这里）" readonly>
+    <button class="ghost" onclick="pickDir()">选择目录</button></div>
+  <div class="row">
+    <button id="cloneBtn" onclick="cloneRepo()">克隆仓库</button>
+    <button id="prepareBtn" class="ghost" onclick="prepareSrc()">准备环境</button>
+    <button class="ghost" onclick="recheck()">重新检测</button>
+  </div>
+  <p class="hint">克隆仓库 = 从 GitHub 拉取 deepseek-harness 源码；准备环境 = pnpm install + pnpm build（可能需要数分钟）。已有源码目录可直接选择后点「准备环境」。</p>
 </div>
 <script>
   function bridge() { return window.dshDesktop && window.dshDesktop.setup }
@@ -190,9 +401,57 @@ const SETUP_HTML = `<!doctype html>
     })
     bridge().install()
   }
+  function srcDirValue() {
+    const dir = document.getElementById('srcdir').value.trim()
+    if (dir === '') { alert('请先选择源码目录'); return null }
+    return dir
+  }
+  // 源码管线（克隆/准备环境）共享的日志与退出处理；返回 false = 已在跑
+  let srcListening = false
+  function srcBegin() {
+    const log = document.getElementById('log'); log.style.display = 'block'
+    document.getElementById('cloneBtn').disabled = true
+    document.getElementById('prepareBtn').disabled = true
+    if (!srcListening) {
+      srcListening = true
+      bridge().onSourceOutput((t) => { log.textContent += t; log.scrollTop = log.scrollHeight })
+      bridge().onSourceExit((code) => {
+        document.getElementById('cloneBtn').disabled = false
+        document.getElementById('prepareBtn').disabled = false
+        if (code !== 0) log.textContent += '\\n提示：可配置网络代理后重试，或手动完成对应步骤后点「重新检测」'
+      })
+    }
+  }
+  function pickDir() {
+    window.dshDesktop.backend.pickDir().then((d) => {
+      if (d !== null) document.getElementById('srcdir').value = d
+    })
+  }
+  function cloneRepo() {
+    const dir = srcDirValue(); if (dir === null) return
+    srcBegin()
+    bridge().cloneSource(dir).then((r) => {
+      if (!r.ok) {
+        alert(r.busy === true ? '已有源码任务在运行，请稍候' : r.error)
+        document.getElementById('cloneBtn').disabled = false
+        document.getElementById('prepareBtn').disabled = false
+      }
+    })
+  }
+  function prepareSrc() {
+    const dir = srcDirValue(); if (dir === null) return
+    srcBegin()
+    bridge().prepareSource(dir).then((r) => {
+      if (!r.ok) {
+        alert(r.busy === true ? '已有源码任务在运行，请稍候' : r.error)
+        document.getElementById('cloneBtn').disabled = false
+        document.getElementById('prepareBtn').disabled = false
+      }
+    })
+  }
   function recheck() {
     bridge().recheck().then((r) => {
-      if (!r.ok) alert('仍未检测到可用的 dsh。请确认安装成功后重试。')
+      if (!r.ok) alert(r.busy === true ? '正在准备中，请等待完成后再检测' : '仍未检测到可用的 dsh。请确认安装成功后重试。')
     })
   }
 </script></body></html>`
@@ -216,6 +475,8 @@ function spawnDshAttempt(located: LocatedDsh, noOpen: boolean, port: number | un
   dsh = startDsh({
     nodePath: 'node',
     dshBin: located.binJs,
+    nodeArgs: located.nodeArgs,
+    cwd: located.cwd,
     dshHome: dshHomeDir(),
     onLog: log,
     noOpen,
@@ -240,7 +501,8 @@ function spawnDshAttempt(located: LocatedDsh, noOpen: boolean, port: number | un
 async function startDshAndLoad(located: LocatedDsh): Promise<void> {
   // --no-open 仅 dsh ≥0.1.0-rc.8 认识；低版本省略（退化为可能弹一次浏览器）
   const noOpen = compareVersions(located.version, '0.1.0-rc.8') >= 0
-  log(`spawn dsh: node=node bin=${located.binJs} version=${located.version} noOpen=${noOpen} DSH_HOME=${dshHomeDir()}`)
+  const srcDesc = located.source === 'git-local' ? ` source-dir=${located.cwd}` : ''
+  log(`spawn dsh: source=${located.source} node=node bin=${located.binJs}${srcDesc} version=${located.version} noOpen=${noOpen} DSH_HOME=${dshHomeDir()}`)
   // 端口策略：固定端口空闲则用（origin 稳定，localStorage 侧设置跨重启保留）；
   // 被占/策略为随机则 --port 0 降级，避免 dsh EADDRINUSE 硬失败退出。
   const policy = getPortPolicy()
@@ -275,15 +537,22 @@ async function startDshAndLoad(located: LocatedDsh): Promise<void> {
 }
 
 /**
- * 检测用户 dsh 并启动后端。
- * @returns 'ok' 已启动；'not-found' 未检测到 dsh（调用方展示引导页）；'failed' 启动失败（已弹窗并退出）。
+ * 解析生效后端（npm 全局 / git 源码目录，按用户偏好与可用性）并启动。
+ * @returns 'ok' 已启动；'not-found' 两个来源都不可用（调用方展示引导页）；'failed' 启动失败（已弹窗并退出）。
  */
 async function bootWithLocatedDsh(): Promise<'ok' | 'not-found' | 'failed'> {
-  locatedDsh = locateDsh()
+  const resolved = resolveBackend()
+  locatedDsh = resolved?.located ?? null
+  backendNotice = resolved?.notice ?? null
   if (locatedDsh === null) return 'not-found'
+  // 两个更新器都按当前生效来源初始化；check/update 由 IPC 按来源分发
   initBackendUpdater(locatedDsh.version)
+  if (locatedDsh.source === 'git-local' && locatedDsh.cwd !== undefined) {
+    initSourceUpdater(locatedDsh.version, locatedDsh.cwd)
+  }
   try {
     await startDshAndLoad(locatedDsh)
+    pushBackendNotice() // 就绪后推送（提示条订阅可能晚于页面加载，get-info 亦可拉取）
     return 'ok'
   } catch (err) {
     log(`dsh 启动失败: ${String(err)}`)
@@ -298,8 +567,30 @@ async function bootWithLocatedDsh(): Promise<'ok' | 'not-found' | 'failed'> {
   }
 }
 
+/**
+ * 停掉当前 dsh → 重新解析生效后端（版本/来源可能已变，如源码更新检出
+ * 新 tag）→ 重启并重载窗口。npm 与源码两个更新器共用。
+ */
+async function restartEffectiveBackend(): Promise<void> {
+  if (dsh !== null) { await dsh.stop(); dsh = null }
+  if (quitting) return
+  const resolved = resolveBackend()
+  if (resolved === null) throw new Error('重启后无法定位可用的 dsh 后端')
+  locatedDsh = resolved.located
+  backendNotice = resolved.notice ?? null
+  if (locatedDsh.source === 'git-local' && locatedDsh.cwd !== undefined) {
+    initSourceUpdater(locatedDsh.version, locatedDsh.cwd)
+  } else {
+    initBackendUpdater(locatedDsh.version)
+  }
+  win?.webContents.send('dsh-backend:update-status', { stage: 'restarting', message: '正在重启后端…' })
+  await startDshAndLoad(locatedDsh)
+  pushBackendNotice()
+}
+
 /** 引导安装 IPC：复制命令 / 壳内一键安装 / 重新检测。 */
 let setupInstalling = false // 安装进行中标志：挡住并发 install 与半安装态的 recheck
+let sourceBusy = false // 克隆/准备/更新管线共享互斥：同一时间只允许一个在跑
 
 function registerSetupIpc(): void {
   ipcMain.handle('dsh-setup:copy-command', () => {
@@ -333,8 +624,8 @@ function registerSetupIpc(): void {
     return true
   })
   ipcMain.handle('dsh-setup:recheck', async () => {
-    // 安装进行中 bin.js 可能已落盘但依赖树不完整，此时启动必然失败——拒绝并提示稍候
-    if (setupInstalling) return { ok: false, busy: true }
+    // 安装/构建进行中产物可能半落盘，此时启动必然失败——拒绝并提示稍候
+    if (setupInstalling || sourceBusy) return { ok: false, busy: true }
     return { ok: await bootWithLocatedDsh() === 'ok' }
   })
 }
@@ -499,6 +790,7 @@ function main(): void {
     registerWindowControls()
     registerAppIpc()
     registerSetupIpc()
+    registerSourceIpc()
     const trayHandlers: TrayHandlers = { show: showWindow, quit: () => void quitApp() }
     createTray(iconPath(), trayHandlers)
 
@@ -509,18 +801,21 @@ function main(): void {
     await win?.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(LOADING_HTML)}`)
     if (quitting) return
 
+    // npm 与源码两个后端更新器的状态合流到同一推送通道（同一时刻只有一个
+    // 生效来源在跑，不会互相覆盖）
     onBackendUpdateStatus((s) => { win?.webContents.send('dsh-backend:update-status', s) })
+    onSourceUpdateStatus((s) => { win?.webContents.send('dsh-backend:update-status', s) })
     // 桌壳更新状态实时推给设置页（两段式 UI：发现新版/下载中/可安装；后台
     // 15s 自动检查发现的版本同样经此到达页面，但下载始终由用户按钮触发）
     onUpdateStatus((s) => { win?.webContents.send('dsh-update:status', s) })
-    setBackendRestartHandler(async () => {
-      // 停旧 dsh → 重启 → 窗口重载
-      if (dsh !== null) { await dsh.stop(); dsh = null }
-      if (!quitting && locatedDsh !== null) {
-        win?.webContents.send('dsh-backend:update-status', { stage: 'restarting', message: '正在重启后端…' })
-        await startDshAndLoad(locatedDsh)
-      }
+    // 源码管线的实时日志（下载更新/克隆/准备环境共用）转发给设置页日志区
+    setSourceLogSink((line) => { if (!quitting) win?.webContents.send('dsh-source:log', line) })
+    setSourceUpdateHooks({
+      restartBackend: restartEffectiveBackend,
+      stopBackend: async () => { if (dsh !== null) { await dsh.stop(); dsh = null } },
     })
+    // 统一重启：重新解析生效后端（npm 升级换版本 / 源码更新换检出后都适用）
+    setBackendRestartHandler(restartEffectiveBackend)
 
     const booted = await bootWithLocatedDsh()
     if (booted === 'not-found') {
