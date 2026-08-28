@@ -43,9 +43,9 @@ English | [简体中文](README.zh.md)
 
 ![DeepSeek Harness Desktop main window](./assets/screenshots/main-window.png)
 
-![Settings — general desktop options](./assets/screenshots/settings-desktop-1.png)
-
-![Settings — backend source, proxy and updates](./assets/screenshots/settings-desktop-2.png)
+| General desktop options | Backend source, proxy and updates |
+| --- | --- |
+| ![Settings — general desktop options](./assets/screenshots/settings-desktop-1.png) | ![Settings — backend source, proxy and updates](./assets/screenshots/settings-desktop-2.png) |
 
 ## Install
 

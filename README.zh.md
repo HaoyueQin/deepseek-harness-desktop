@@ -43,9 +43,9 @@
 
 ![DeepSeek Harness Desktop 主界面](./assets/screenshots/main-window.png)
 
-![设置 — 桌面通用选项](./assets/screenshots/settings-desktop-1.png)
-
-![设置 — 后端来源、代理与更新](./assets/screenshots/settings-desktop-2.png)
+| 桌面通用选项 | 后端来源、代理与更新 |
+| --- | --- |
+| ![设置 — 桌面通用选项](./assets/screenshots/settings-desktop-1.png) | ![设置 — 后端来源、代理与更新](./assets/screenshots/settings-desktop-2.png) |
 
 ## 安装
 
