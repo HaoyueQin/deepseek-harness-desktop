@@ -48,4 +48,32 @@ const URL = 'http://127.0.0.1:50871'
   assert.equal(m.push(`dsh web: ${URL}\nsome log\ndsh web: http://127.0.0.1:9999\n`), URL)
 }
 
+// alpha.1+：URL 带 /?token=（整串返回，供 loadURL 完成 cookie 换取）
+{
+  const tokened = 'http://127.0.0.1:14918/?token=fD8CmAYGK7Pb9UF3EgQaKByMbiHLjYJ7ye6qyaIp5Sw'
+  const m = new UrlLineMatcher()
+  assert.equal(m.push(`dsh web: ${tokened}\n`), tokened)
+}
+
+// (LAN: …) 后缀行：只取 127.0.0.1 地址，不带 LAN 部分
+{
+  const m = new UrlLineMatcher()
+  assert.equal(m.push(`dsh web: ${URL} (LAN: http://192.168.1.5:50871)\n`), URL)
+}
+
+// tokened URL 拆在 token 中间（跨 chunk）
+{
+  const tokened = 'http://127.0.0.1:14918/?token=abcDEF123_-xyz'
+  const m = new UrlLineMatcher()
+  assert.equal(m.push(`dsh web: ${tokened.slice(0, 35)}`), null)
+  assert.equal(m.push(`${tokened.slice(35)}\n`), tokened)
+}
+
+// tokened + LAN 后缀并存（极端组合）
+{
+  const tokened = 'http://127.0.0.1:14918/?token=abc'
+  const m = new UrlLineMatcher()
+  assert.equal(m.push(`dsh web: ${tokened} (LAN: http://192.168.1.5:14918/?token=abc)\n`), tokened)
+}
+
 console.log('url-line OK: 跨 chunk URL 行解析通过')

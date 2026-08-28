@@ -1,7 +1,7 @@
 /**
  * 无 GUI 冒烟：spawn dsh web --port 0，断言
- *   1) stdout 出现官方 URL 行 "dsh web: http://127.0.0.1:<port>"
- *   2) 该地址 HTTP 200
+ *   1) stdout 出现官方 URL 行 "dsh web: http://127.0.0.1:<port>[/…]"（alpha.1+ 带 /?token=）
+ *   2) 该地址有 HTTP 响应（任意状态；tokened URL 对裸 fetch 是 303）
  * 然后停止进程。这是端口发现链路的可复现验证。
  *
  * 纯壳架构（v1.0.0 起）：用系统已装的 dsh（与桌面壳运行时同源）。
@@ -33,8 +33,9 @@ const nodePath = 'node'
 const dshBin = locateDsh()
 
 const dshHome = mkdtempSync(join(tmpdir(), 'dsh-smoke-'))
-// URL 行独占一行以 \n 收尾；锚定换行避免端口前几位时提前命中残缺地址
-const URL_LINE = /dsh web: (http:\/\/127\.0\.0\.1:\d+)\r?\n/
+// URL 行独占一行以 \n 收尾；锚定换行避免行中途提前命中；地址段 \S* 兼容 /?token=，
+// LAN 后缀段整体可选（与 src/dsh/url-line.ts 保持一致）
+const URL_LINE = /dsh web: (http:\/\/127\.0\.0\.1:\d+\S*)(?: \(LAN: [^)\n]*\))?\r?\n/
 
 // --no-open：smoke 只验证端口发现链路，不弹系统浏览器（rc.8+ 默认会弹）
 const child = spawn(nodePath, [dshBin, 'web', '--port', '0', '--no-open'], {
@@ -78,11 +79,11 @@ async function main() {
   const deadlineHttp = Date.now() + 30_000
   let ok = false
   while (Date.now() < deadlineHttp && !ok) {
-    try { ok = (await fetch(url)).ok } catch { /* 未就绪 */ }
+    try { await fetch(url, { redirect: 'manual' }); ok = true } catch { /* 未就绪 */ }
     if (!ok) await new Promise(r => setTimeout(r, 250))
   }
-  if (!ok) throw new Error(`HTTP 未 200: ${url}`)
-  console.log(`SMOKE OK: HTTP 200 @ ${url}`)
+  if (!ok) throw new Error(`HTTP 无响应: ${url}`)
+  console.log(`SMOKE OK: HTTP 有响应 @ ${url}`)
 
   clearTimeout(timeout)
   child.kill()
