@@ -301,7 +301,7 @@ window.__ModuleLoader__.load({
 					),
 					radio("auto", "自动（推荐）", "npm 优先；npm 不可用时自动改用源码目录"),
 					radio("npm", "npm 全局安装", "使用 PATH 里的 dsh 命令行（npm i -g @deepseek-ai/dsh）"),
-					radio("source", "本地源码目录", "以 node --import tsx/esm 直接运行源码；目录需完成 pnpm install 与 pnpm build"),
+					radio("source", "本地源码目录", "使用本地源码中的 dsh（任意已检出版本，含预发布）；缺什么壳会提示一键补齐，无需手动执行命令"),
 
 					draft.mode === "source" ? React.createElement("div", { style: { display: "flex", gap: "8px", marginTop: "10px", alignItems: "center" } },
 						React.createElement("input", {
@@ -319,9 +319,15 @@ window.__ModuleLoader__.load({
 
 					draft.mode === "source" && draft.sourceDir !== "" && validation !== null
 						? React.createElement("div", { style: { ...subStyle, paddingLeft: "23px", marginTop: "8px" } },
-							validation.ok
-								? React.createElement("span", { style: { color: OK_GREEN } }, `✓ 可启动：dsh ${validation.version}`)
-								: React.createElement("span", { style: { color: "#d5491f" } }, `✗ 不可启动：${missing.join("；")}`),
+						validation.ok
+							? React.createElement("span", { style: { color: OK_GREEN } }, `✓ 可启动：dsh ${validation.version}`)
+							: React.createElement("span", {},
+								React.createElement("span", { style: { color: "#d5491f" } }, `✗ 不可启动：${missing.join("；")}`),
+								React.createElement("div", { style: { marginTop: "4px" } },
+									notRepo
+										? "点上方「克隆仓库」，桌面壳会自动从官方仓库拉取源码到该目录"
+										: "点上方「准备环境」，桌面壳会自动安装依赖并构建，全程无需手动执行命令（可能需要数分钟）"),
+							),
 							validation.warnings.length > 0
 								? React.createElement("div", { style: { marginTop: "4px" } }, `注意：${validation.warnings.join("；")}`)
 								: null,
