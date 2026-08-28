@@ -2,7 +2,8 @@
  * 浏览器 half（手写 CJS bundle，遵循 dsh client 插件契约：
  * __ModuleLoader__.load banner + external 只依赖 platform words）。
  * 桌面设置「桌面」分区：后端来源 / dsh 版本 / 开机自启 / 启动最小化 / 端口 /
- * 会话区域宽度（仅无原生宽度功能的旧版后端显示）/ 关于 / 更新检查；回退提示条。
+ * 关于 / 更新检查；回退提示条。会话区域宽度：0.1.1 及更早的后端由壳复刻
+ * alpha.1 同款拖拽手柄（0.1.2-alpha.1+ 用上游原生实现，壳不注入）。
  * 桥 window.dshDesktop 由壳 preload contextBridge 注入；裸 dsh（无桥）降级为空。
  * UI 用原生元素 + --dsw-* CSS 变量（品牌蓝 #4176E6 兜底），契合 dsh 设计体系。
  * 一份 bundle 同时服务 npm 全局与 git 源码两种后端来源；版本差异（原生宽度）
@@ -112,50 +113,158 @@ window.__ModuleLoader__.load({
 			)
 		}
 
-		// ===== 会话区域宽度 =====
-		// dsh 对话列全部锚定 CSS 变量 --dsh-chat-content-width（ConversationRoot
-		// 默认 748px；输入框 = 宽度+32px、表格 breakout 等均引用同一变量）。
-		// 注入一条 !important 规则覆盖即可全局生效；百分比相对父容器解析，
-		// 侧边栏插件（如 better-sidebar）开合改变容器宽度时自动自适应。
-		const CONV_WIDTH_KEY = "dsh-desktop-conv-width"
-		const CONV_WIDTH_STYLE_ID = "dsh-desktop-conv-width"
-		const CONV_WIDTH_SELECTOR = "div[data-phase]:has(> [data-conversation-scroll])"
+		// ===== 会话区域宽度（旧版后端复刻 dsh 0.1.2-alpha.1 原生拖拽手柄）=====
+		// alpha.1 起 ui-conversation 自带转录区两侧拖拽手柄；旧版（≤0.1.1）由壳
+		// 在 DOM 层复刻同一实现：同一套常量与 clamp 公式、同一个 localStorage
+		// 偏好 key（升级到新版后原生手柄无缝接管同一偏好）、同款手柄/辉光条
+		// CSS（经属性选择器注入，绕开 CSS modules 哈希类名）。新版后端不注入
+		// 任何东西。
 
-		function normalizeConvWidth(value) {
-			if (value === "standard" || value === "full") return value
-			const n = Number.parseInt(value, 10)
-			return Number.isFinite(n) && n >= 40 && n <= 95 ? String(n) : "standard"
+		/** 与 alpha.1 同名的偏好 key（px 整数）：升级后原生手柄直接读取。 */
+		const WIDTH_PREF_KEY = "dsh.conversation.contentWidth"
+		/** 已废弃的壳旧版百分比 key：任何版本都清理。 */
+		const LEGACY_CONV_WIDTH_KEY = "dsh-desktop-conv-width"
+		const LEGACY_WIDTH_STYLE_ID = "dsh-desktop-legacy-width"
+		const LEGACY_ROOT_SELECTOR = "div[data-phase]:has(> [data-conversation-scroll])"
+		const CONTENT_MIN = 640
+		const CONTENT_EDGE_BUDGET = 176
+
+		/** 与 alpha.1 resolveContentWidth 同式：偏好 clamp 进 [min, 列宽-176]；无偏好走自适应。 */
+		function resolveLegacyWidth(columnWidth, preference) {
+			const max = Math.max(CONTENT_MIN, columnWidth - CONTENT_EDGE_BUDGET)
+			if (preference !== null) return Math.min(Math.max(preference, CONTENT_MIN), max)
+			return Math.max(680, Math.min(columnWidth * 0.64, 920))
 		}
 
-		function getConvWidth() {
-			try { return normalizeConvWidth(localStorage.getItem(CONV_WIDTH_KEY)) } catch { return "standard" }
+		function readLegacyWidthPref() {
+			try {
+				const raw = localStorage.getItem(WIDTH_PREF_KEY)
+				if (raw === null) return null
+				const v = Number(raw)
+				return Number.isFinite(v) && v > 0 ? v : null
+			} catch { return null }
 		}
 
-		/** 应用宽度：standard 移除覆盖（恢复上游默认 748px），其余注入百分比。 */
-		function applyConvWidth(value) {
-			const v = normalizeConvWidth(value)
-			try { localStorage.setItem(CONV_WIDTH_KEY, v) } catch { /* 存储不可用时仅本次生效 */ }
-			let tag = document.getElementById(CONV_WIDTH_STYLE_ID)
-			if (v === "standard") {
-				if (tag) tag.remove()
-				return v
+		function injectLegacyWidthStyle() {
+			if (document.getElementById(LEGACY_WIDTH_STYLE_ID) !== null) return
+			const tag = document.createElement("style")
+			tag.id = LEGACY_WIDTH_STYLE_ID
+			// 逐条对照 alpha.1 ConversationRoot(.module.css)：数值与结构原样，
+			// 仅选择器从哈希类名换成稳定属性选择器。
+			tag.textContent = [
+				// 定位上下文 + 宽度轴（自适应 clamp 依赖 JS 发布的列宽变量）
+				// 括号结构必须与 alpha.1 一致：920px 是 clamp 的第三参、在 var 的
+				// fallback 之内——此前错写成 clamp 外，导致声明无效、对话列撑满
+				`${LEGACY_ROOT_SELECTOR}{position:relative;--dsh-chat-content-width:var(--dsh-chat-user-width,clamp(680px,calc(var(--dsh-conversation-column-width,0px)*0.64),920px))}`,
+				// header 等根级兄弟压过手柄（9 > 8），保持可点
+				`${LEGACY_ROOT_SELECTOR} > :not([data-conversation-scroll]):not([data-dsh-legacy-handle]){position:relative;z-index:9}`,
+				`[data-dsh-legacy-handle]{position:absolute;top:0;bottom:0;z-index:8;width:min(40px,calc((100% - var(--dsh-chat-content-width))/2 - 24px - 24px));cursor:col-resize}`,
+				`[data-dsh-legacy-handle][data-side=left]{right:calc(50% + var(--dsh-chat-content-width)/2 + 24px)}`,
+				`[data-dsh-legacy-handle][data-side=right]{left:calc(50% + var(--dsh-chat-content-width)/2 + 24px)}`,
+				`[data-dsh-legacy-handle]::after{content:"";position:absolute;top:0;bottom:0;width:3px;border-radius:3px;background:linear-gradient(to bottom,transparent calc(var(--dsh-width-handle-pointer-y,50%) - 52px),var(--dsw-alias-scrollbar-hover-l1,#8a919f) calc(var(--dsh-width-handle-pointer-y,50%) - 12px),var(--dsw-alias-scrollbar-hover-l1,#8a919f) calc(var(--dsh-width-handle-pointer-y,50%) + 12px),transparent calc(var(--dsh-width-handle-pointer-y,50%) + 52px));opacity:0;pointer-events:none}`,
+				`[data-dsh-legacy-handle][data-side=left]::after{right:16px}`,
+				`[data-dsh-legacy-handle][data-side=right]::after{left:16px}`,
+				`[data-dsh-legacy-handle]:hover::after,[data-dsh-legacy-handle][data-dragging]::after{opacity:1}`,
+				// 输入区 overlay（trajectory 等）接管滚动时手柄退位
+				`${LEGACY_ROOT_SELECTOR}:has([data-conversation-composer-overlay]) [data-dsh-legacy-handle]{display:none}`,
+			].join("\n")
+			document.head.appendChild(tag)
+		}
+
+		/** 给一个会话根挂双侧手柄（DOM 版 WidthHandle）+ ResizeObserver。幂等。 */
+		function attachLegacyWidthHandles(root) {
+			if (root.querySelector("[data-dsh-legacy-handle]") !== null) return
+			const columnWidth = () => root.getBoundingClientRect().width
+			const publish = (w) => root.style.setProperty("--dsh-chat-user-width", w + "px")
+			// alpha.1 publishWidths 同款：列宽变量持续发布（clamp 依赖）；偏好只
+			// clamp 显示，存储保持原始值（窗口拉宽后恢复完整偏好）
+			const publishWidths = () => {
+				const column = columnWidth()
+				root.style.setProperty("--dsh-conversation-column-width", column + "px")
+				const pref = readLegacyWidthPref()
+				if (pref === null) root.style.removeProperty("--dsh-chat-user-width")
+				else publish(resolveLegacyWidth(column, pref))
 			}
-			const pct = v === "full" ? "90%" : v + "%"
-			if (!tag) {
-				tag = document.createElement("style")
-				tag.id = CONV_WIDTH_STYLE_ID
-				document.head.appendChild(tag)
+			publishWidths()
+			new ResizeObserver(publishWidths).observe(root)
+
+			for (const side of ["left", "right"]) {
+				const handle = document.createElement("div")
+				handle.setAttribute("data-dsh-legacy-handle", "")
+				handle.setAttribute("data-side", side)
+				let base = 0
+				let originX = 0
+				let latestX = 0
+				let frame = null
+				const outwardWidth = () => {
+					const dx = latestX - originX
+					return base + (side === "right" ? dx : -dx) * 2
+				}
+				const clampWidth = (w) => Math.min(Math.max(w, CONTENT_MIN), Math.max(CONTENT_MIN, columnWidth() - CONTENT_EDGE_BUDGET))
+				handle.addEventListener("pointerdown", (e) => {
+					e.preventDefault()
+					handle.setPointerCapture(e.pointerId)
+					handle.setAttribute("data-dragging", "")
+					originX = latestX = e.clientX
+					base = resolveLegacyWidth(columnWidth(), readLegacyWidthPref())
+				})
+				handle.addEventListener("pointermove", (e) => {
+					const box = handle.getBoundingClientRect()
+					handle.style.setProperty("--dsh-width-handle-pointer-y", (e.clientY - box.top) + "px")
+					if (!handle.hasPointerCapture(e.pointerId)) return
+					latestX = e.clientX
+					if (frame === null) {
+						frame = requestAnimationFrame(() => {
+							frame = null
+							publish(clampWidth(outwardWidth()))
+						})
+					}
+				})
+				const endDrag = (e) => {
+					if (!handle.hasPointerCapture(e.pointerId)) return
+					handle.releasePointerCapture(e.pointerId)
+					if (frame !== null) { cancelAnimationFrame(frame); frame = null }
+					latestX = e.clientX
+					// 与 alpha.1 一致：仅实际位移提交；存储写原始值而非 clamp 显示值
+					if (latestX !== originX) {
+						try { localStorage.setItem(WIDTH_PREF_KEY, String(outwardWidth())) } catch { /* 仅本次生效 */ }
+						publish(clampWidth(outwardWidth()))
+					}
+					handle.removeAttribute("data-dragging")
+				}
+				handle.addEventListener("pointerup", endDrag)
+				handle.addEventListener("pointercancel", endDrag)
+				root.appendChild(handle)
 			}
-			// 子树 max-width 过渡：预设切换/滑块调节时平滑变化而非突变
-			tag.textContent = `${CONV_WIDTH_SELECTOR}{--dsh-chat-content-width:${pct}!important}`
-				+ `${CONV_WIDTH_SELECTOR} *{transition:max-width .22s ease-out}`
-			return v
 		}
 
-		// 后端版本缓存：宽度注入需要在 factory 早绘阶段决策，而后端版本要等
+		let legacyWidthObserver = null
+
+		/** 扫描当前文档里全部会话根并补挂手柄。 */
+		function scanLegacyWidthRoots() {
+			document.querySelectorAll(LEGACY_ROOT_SELECTOR).forEach((root) => attachLegacyWidthHandles(root))
+		}
+
+		/** 旧版启用：注入样式 + 持续监视会话根（重建/路由切换自动重挂）。 */
+		function installLegacyWidth() {
+			if (legacyWidthObserver !== null) { scanLegacyWidthRoots(); return }
+			injectLegacyWidthStyle()
+			legacyWidthObserver = new MutationObserver(scanLegacyWidthRoots)
+			legacyWidthObserver.observe(document.body, { childList: true, subtree: true })
+			scanLegacyWidthRoots()
+		}
+
+		/** 停用：摘掉样式与已挂手柄、停止监视（切到原生手柄的后端时调用）。 */
+		function uninstallLegacyWidth() {
+			if (legacyWidthObserver !== null) { legacyWidthObserver.disconnect(); legacyWidthObserver = null }
+			document.querySelectorAll("[data-dsh-legacy-handle]").forEach((el) => el.remove())
+			const tag = document.getElementById(LEGACY_WIDTH_STYLE_ID)
+			if (tag !== null) tag.remove()
+		}
+
+		// 后端版本缓存：宽度策略需要在 factory 早绘阶段决策，而后端版本要等
 		// getInfo 才知道——用 localStorage 缓存上次会话的版本号，下次启动即可
-		// 立即决策；首访（无缓存）不预注入，等版本确认后再应用，避免新版上
-		// !important 短暂压过原生手柄。
+		// 立即决策；首访（无缓存）等版本确认后再应用。
 		const BACKEND_VER_KEY = "dsh-desktop-backend-version"
 
 		function getCachedBackendVersion() {
@@ -166,15 +275,14 @@ window.__ModuleLoader__.load({
 			try { localStorage.setItem(BACKEND_VER_KEY, version || "") } catch { /* 存储不可用则每次等 getInfo */ }
 		}
 
-		/** 按后端版本决定宽度策略：新版清掉壳的覆盖与残留偏好（原生手柄接管）。 */
+		/** 按后端版本决定宽度策略：新版交给原生手柄；旧版装复刻手柄。 */
 		function applyWidthForVersion(version) {
+			try { localStorage.removeItem(LEGACY_CONV_WIDTH_KEY) } catch { /* 无害 */ }
 			if (backendSupportsNativeWidth(version)) {
-				try { localStorage.removeItem(CONV_WIDTH_KEY) } catch { /* 同上 */ }
-				const tag = document.getElementById(CONV_WIDTH_STYLE_ID)
-				if (tag) tag.remove()
+				uninstallLegacyWidth()
 				return
 			}
-			applyConvWidth(getConvWidth())
+			installLegacyWidth()
 		}
 
 		if (typeof document !== "undefined") {
@@ -343,7 +451,7 @@ window.__ModuleLoader__.load({
 						}),
 					),
 					React.createElement("div", { style: { ...subStyle, marginTop: "4px" } },
-						"作用于源码目录的 git 克隆/拉取与 pnpm 安装构建；npm 渠道更新不走此代理",
+						"作用于后端更新的全部网络访问：git 克隆/拉取、pnpm 安装构建、npm 渠道的检查与安装",
 					),
 
 					saved ? React.createElement("div", { style: { display: "flex", gap: "10px", alignItems: "center", marginTop: "10px" } },
@@ -368,8 +476,6 @@ window.__ModuleLoader__.load({
 			const [autostart, setAutostart] = React.useState(false)
 			const [launchMin, setLaunchMin] = React.useState(false)
 			const [info, setInfo] = React.useState(null)
-			// 后端是否自带原生宽度功能（决定宽度卡片是否渲染）
-			const [nativeWidth, setNativeWidth] = React.useState(() => backendSupportsNativeWidth(getCachedBackendVersion()))
 			const [update, setUpdate] = React.useState({
 				checking: false, unsupported: false, devMode: false,
 				latest: null, downloading: false, downloaded: false, checked: false,
@@ -388,7 +494,6 @@ window.__ModuleLoader__.load({
 					const v = i && i.dshVersion ? i.dshVersion : ""
 					cacheBackendVersion(v)
 					applyWidthForVersion(v)
-					setNativeWidth(backendSupportsNativeWidth(v))
 				}).catch(() => {})
 				if (desktop.portPolicy) desktop.portPolicy.get().then(setPortInfo).catch(() => {})
 			}, [])
@@ -473,45 +578,6 @@ window.__ModuleLoader__.load({
 				: "custom"
 			// 自定义入口端口：已在自定义模式则保持现值，否则从 3180 起步
 			const customPort = portMode === "custom" ? portConfigured : 3180
-
-			// 会话区域宽度：standard=上游默认 748px（max-width 封顶，窄窗自动撑满，
-			// 保持原有响应式策略）；full=90%；数字=自定义百分比
-			const [convWidth, setConvWidth] = React.useState(() => getConvWidth())
-			// 标准模式下 748px 的等效百分比（随窗口尺寸实时计算，仅用于滑块定位）
-			const [stdPct, setStdPct] = React.useState(null)
-			React.useEffect(() => {
-				if (convWidth !== "standard") return
-				const measure = () => {
-					const el = document.querySelector("[data-conversation-scroll]")
-					if (!el) return
-					const cs = getComputedStyle(el)
-					const content = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
-					if (content > 0) setStdPct(Math.min(95, Math.max(40, Math.round((748 / content) * 100))))
-				}
-				measure()
-				window.addEventListener("resize", measure)
-				return () => window.removeEventListener("resize", measure)
-			}, [convWidth])
-
-			const setConvWidthMode = (v) => setConvWidth(applyConvWidth(v))
-			const stdLabel = stdPct !== null ? `标准 (748px ≈ 当前宽度的 ${stdPct}%)` : "标准 (748px)"
-			const convWidthLabel = convWidth === "standard" ? stdLabel
-				: convWidth === "full" ? "全宽 (90%)"
-				: `自定义 (${convWidth}%)`
-			// 滑块位置：全宽=90、自定义=NN、标准=748px 的实时等效百分比
-			const sliderValue = convWidth === "full" ? 90
-				: convWidth === "standard" ? (stdPct ?? 46)
-				: Number.parseInt(convWidth, 10)
-			// 分段按钮（预设选择通用件）：选中态品牌蓝描边
-			const segBtn = (active, onClick, text) => React.createElement("button", {
-				style: {
-					border: "1px solid " + (active ? BRAND : "var(--dsw-alias-border-l2, #d0d5de)"),
-					borderRadius: "6px", padding: "6px 14px", background: "transparent",
-					fontSize: "12px", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
-					color: active ? BRAND : "var(--dsw-alias-label-primary, #1f2329)",
-				},
-				onClick,
-			}, text)
 
 			// 裸 dsh 降级：无桥则渲染空。置于所有 hooks 之后——React 要求每次渲染
 			// hooks 数量与顺序一致，条件 return 出现在 hooks 之前会破坏规则。
@@ -618,34 +684,6 @@ window.__ModuleLoader__.load({
 						portDraft !== null ? React.createElement("div", { style: { ...subStyle, marginTop: "10px" } },
 							"已保存，重启应用后生效",
 						) : null,
-					),
-				),
-
-				// 会话区域宽度（仅旧版后端显示：0.1.2-alpha.1+ 自带拖拽手柄，
-				// 且壳的 !important 会压过原生内联样式，必须停用避免冲突）
-				nativeWidth ? null : React.createElement("div", { style: rowStyle },
-					React.createElement("div", { style: { minWidth: 0 } },
-						React.createElement("div", { style: labelStyle }, "会话区域宽度"),
-						React.createElement("div", { style: subStyle },
-							"调节对话消息列宽度；与侧边栏插件兼容，边栏开合时自适应",
-						),
-						React.createElement("div", { style: subStyle },
-							`当前：${convWidthLabel}`,
-						),
-						React.createElement("input", {
-							type: "range", min: 40, max: 95, step: 1,
-							value: sliderValue,
-							onChange: (e) => setConvWidthMode(e.target.value),
-							style: { width: "100%", marginTop: "8px", accentColor: BRAND, cursor: "pointer" },
-						}),
-						convWidth === "standard"
-							? React.createElement("div", { style: subStyle },
-								"标准保持原有策略：宽屏时固定 748px 居中，窗口变窄时自动撑满；拖动滑块切换为按百分比固定")
-							: null,
-					),
-					React.createElement("div", { style: { display: "flex", gap: "8px", alignItems: "center" } },
-						segBtn(convWidth === "standard", () => setConvWidthMode("standard"), "标准 (748px)"),
-						segBtn(convWidth === "full", () => setConvWidthMode("full"), "全宽 (90%)"),
 					),
 				),
 
