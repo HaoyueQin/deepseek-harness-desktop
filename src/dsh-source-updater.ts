@@ -13,7 +13,7 @@
 import { spawn } from 'node:child_process'
 import { log } from './log.js'
 import { getNetworkProxy, getSourceDir } from './settings.js'
-import { pickLatestTag, tagVersion, validateSourceDir } from './dsh-source.js'
+import { pickLatestTag, tagVersion, validateSourceDir, isOfficialRemoteUrl } from './dsh-source.js'
 import { compareVersions } from './dsh-locator.js'
 import type { BackendUpdateStatus } from './dsh-updater.js'
 
@@ -116,6 +116,27 @@ function runPnpm(dir: string, args: string[]): Promise<string> {
   return runStreamed('pnpm', args, { cwd: dir, viaShell: true, env: proxyEnv() })
 }
 
+/**
+ * 解析源码目录里指向官方仓库的 remote（origin/upstream 皆可，多个官方时
+ * 优先 origin）。裸 `git fetch --tags` 只取 origin——origin 指向已删除的
+ * fork 或非官方仓库时报 Repository not found / 取到错误 tag。
+ */
+async function resolveOfficialRemote(dir: string): Promise<string> {
+  const remotes = (await runGit(dir, ['remote'])).split(/\r?\n/).map((s) => s.trim()).filter(Boolean)
+  const official: string[] = []
+  for (const r of remotes) {
+    const url = (await runGit(dir, ['remote', 'get-url', r])).trim()
+    if (isOfficialRemoteUrl(url)) official.push(r)
+  }
+  if (official.includes('origin')) return 'origin'
+  if (official.length > 0) return official[0]
+  throw new Error(
+    remotes.length === 0
+      ? '源码目录没有配置任何 git remote；请在源码目录执行 git remote add upstream https://github.com/deepseek-ai/deepseek-harness.git'
+      : `remote 都不指向官方仓库（${remotes.map((r) => r).join('、')}）；请添加官方 remote：git remote add upstream https://github.com/deepseek-ai/deepseek-harness.git`,
+  )
+}
+
 /** 检查远端最新 tag；与当前一致时 latest 置 null（无更新）。 */
 export async function checkSourceUpdate(): Promise<BackendUpdateStatus> {
   status.current = currentVersion
@@ -124,8 +145,9 @@ export async function checkSourceUpdate(): Promise<BackendUpdateStatus> {
   publish()
   try {
     const dir = requireDir()
-    emitLog(`[shell] 正在从远端获取 tag（git fetch --tags）…`)
-    await runGit(dir, ['fetch', '--tags', '--prune'])
+    const remote = await resolveOfficialRemote(dir)
+    emitLog(`[shell] 正在从 ${remote}（官方仓库）获取 tag…`)
+    await runGit(dir, ['fetch', remote, '--tags', '--prune'])
     const out = await runGit(dir, ['tag', '--list', 'dsh-v*'])
     const latestTag = pickLatestTag(out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean))
     if (latestTag === null) throw new Error('远端没有合法的 dsh-v* tag')
