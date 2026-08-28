@@ -4,12 +4,14 @@
  *
  * 检测：`npm view @deepseek-ai/dsh@latest version` 与当前版本比较；
  * 升级：`npm i -g @deepseek-ai/dsh@<版本>`，完成后经 main 注入的
- * restart 处理器重启后端并重载窗口。全程走系统 npm（能装 dsh 必有 npm）。
+ * restart 处理器重启后端并重载窗口。全程走系统 npm（能装 dsh 必有 npm），
+ * 代理经环境变量注入（与 pnpm 一致，见 settings.networkProxyEnv）。
  */
 
 import { spawn } from 'node:child_process'
 import { log } from './log.js'
 import { locateDsh } from './dsh-locator.js'
+import { networkProxyEnv } from './settings.js'
 
 export type UpdateStage = 'idle' | 'checking' | 'updating' | 'done' | 'error'
 
@@ -53,6 +55,7 @@ function runNpm(args: string[]): Promise<string> {
     const isWin = process.platform === 'win32'
     const child = spawn(isWin ? process.env.ComSpec ?? 'cmd' : 'npm',
       isWin ? ['/d', '/s', '/c', cmdStr] : args, {
+        env: { ...process.env, ...networkProxyEnv() },
         windowsHide: true,
       })
     let out = ''

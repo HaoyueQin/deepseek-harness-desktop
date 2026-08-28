@@ -12,7 +12,7 @@
 
 import { spawn } from 'node:child_process'
 import { log } from './log.js'
-import { getNetworkProxy, getSourceDir } from './settings.js'
+import { getNetworkProxy, networkProxyEnv } from './settings.js'
 import { pickLatestTag, tagVersion, validateSourceDir, isOfficialRemoteUrl } from './dsh-source.js'
 import { compareVersions } from './dsh-locator.js'
 import type { BackendUpdateStatus } from './dsh-updater.js'
@@ -74,11 +74,8 @@ function proxyArgs(): string[] {
   return p === '' ? [] : ['-c', `http.proxy=${p}`, '-c', `https.proxy=${p}`]
 }
 
-/** pnpm 代理：环境变量方式（NO_PROXY 放行本机回调）。 */
-function proxyEnv(): NodeJS.ProcessEnv {
-  const p = getNetworkProxy()
-  return p === '' ? {} : { HTTP_PROXY: p, HTTPS_PROXY: p, NO_PROXY: '127.0.0.1,localhost' }
-}
+/** pnpm 代理：统一走 settings.networkProxyEnv（git 走 runGit 的 -c 注入）。 */
+const proxyEnv = networkProxyEnv
 
 /**
  * 流式执行一个子进程：输出逐段 emitLog，exit 0 resolve 全量输出。

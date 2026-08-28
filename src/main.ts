@@ -13,7 +13,7 @@ import { dshHomeDir, iconPath, preloadPath, resourcesDir } from './paths.js'
 import {
   getLaunchMinimized, setLaunchMinimized, getPortPolicy, setPortPolicy,
   getBackendSource, setBackendSource, getSourceDir, setSourceDir,
-  getNetworkProxy, setNetworkProxy,
+  getNetworkProxy, setNetworkProxy, networkProxyEnv,
   type PortPolicy, type BackendSource,
 } from './settings.js'
 import { isAutostartEnabled, setAutostart } from './autostart.js'
@@ -275,8 +275,7 @@ function registerSourceIpc(): void {
     const target = dir.trim()
     sourceBusy = true
     const push = (t: string): void => { if (!quitting) win?.webContents.send('dsh-source:log', t) }
-    const proxy = getNetworkProxy()
-    const env = proxy === '' ? process.env : { ...process.env, HTTP_PROXY: proxy, HTTPS_PROXY: proxy, NO_PROXY: '127.0.0.1,localhost' }
+    const env = { ...process.env, ...networkProxyEnv() }
     const isWin = process.platform === 'win32'
     // pnpm 是 .cmd shim，经 ComSpec /c 解析；参数为固定字面量
     const runPnpm = (args: string[]): ChildProcess => spawn(
@@ -601,9 +600,11 @@ function registerSetupIpc(): void {
     if (setupInstalling) return true // 幂等：已在安装中
     setupInstalling = true
     // 参数全部固定字面量；Windows 经 ComSpec /c 解析 .cmd shim（shell:true+args 数组在 Node≥22 触发 DEP0190）
+    // 代理经环境变量注入（与 pnpm/git 侧同一设置）
     const isWin = process.platform === 'win32'
     const child = spawn(isWin ? process.env.ComSpec ?? 'cmd' : 'npm',
       isWin ? ['/d', '/s', '/c', 'npm i -g @deepseek-ai/dsh'] : ['i', '-g', '@deepseek-ai/dsh'], {
+        env: { ...process.env, ...networkProxyEnv() },
         windowsHide: true,
       })
     const push = (t: string): void => { if (!quitting) win?.webContents.send('dsh-setup:install-output', t) }

@@ -112,3 +112,12 @@ export function getNetworkProxy(): string {
 export function setNetworkProxy(v: unknown): void {
   write({ ...read(), networkProxy: normalizeText(v) })
 }
+
+/**
+ * 代理环境变量（HTTP_PROXY/HTTPS_PROXY，NO_PROXY 放行本机回调）：供 npm/pnpm
+ * 子进程统一使用；git 侧经 -c 参数注入（调用方处理，不改全局 gitconfig）。
+ */
+export function networkProxyEnv(): NodeJS.ProcessEnv {
+  const p = getNetworkProxy()
+  return p === '' ? {} : { HTTP_PROXY: p, HTTPS_PROXY: p, NO_PROXY: '127.0.0.1,localhost' }
+}
