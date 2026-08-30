@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="420" viewBox="0 0 720 420" font-family="system-ui, 'Segoe UI', sans-serif">
+  <defs>
+    <path id="whale" d="M26.5174 3.39471C26.235 3.2567 26.1137 3.52006 25.9487 3.65346C25.8923 3.69659 25.8446 3.75294 25.7969 3.80469C25.3846 4.24516 24.9027 4.53439 24.2737 4.49989C23.3536 4.44814 22.5682 4.73737 21.8735 5.44119C21.7258 4.57349 21.2353 4.0554 20.4889 3.72304C20.0985 3.55054 19.7034 3.37746 19.4297 3.00197C19.2388 2.73459 19.1865 2.43673 19.091 2.14289C19.0301 1.96579 18.9697 1.78466 18.7656 1.75418C18.5442 1.71968 18.4574 1.90541 18.3705 2.06067C18.0232 2.69549 17.8887 3.39471 17.9019 4.10313C17.9324 5.6965 18.6051 6.96556 19.9421 7.86834C20.0939 7.97184 20.133 8.07535 20.0852 8.22658C19.9938 8.53766 19.8857 8.83955 19.7903 9.15063C19.7293 9.34901 19.6384 9.39271 19.4257 9.30588C18.692 8.9994 18.0583 8.54571 17.4982 7.99772C16.5477 7.07827 15.6881 6.06336 14.6162 5.26869C14.3644 5.08296 14.1125 4.91045 13.8521 4.746C12.7584 3.68394 13.9952 2.81164 14.2816 2.70814C14.5812 2.60003 14.3857 2.22857 13.4179 2.23317C12.4502 2.2372 11.5646 2.56151 10.4359 2.99335C10.2708 3.05832 10.0972 3.10547 9.91951 3.14457C8.8954 2.95022 7.83162 2.90709 6.72069 3.03245C4.62877 3.26533 2.95777 4.25436 1.72954 5.94261C0.254043 7.97184 -0.0932678 10.2777 0.33167 12.6824C0.778458 15.2171 2.07225 17.3153 4.06008 18.9558C6.12152 20.6567 8.49577 21.4905 11.2047 21.3306C12.8498 21.2358 14.6812 21.0155 16.7473 19.2669C17.2682 19.5262 17.8151 19.6297 18.7219 19.7074C19.4205 19.7723 20.0933 19.6729 20.6143 19.5648C21.4302 19.3923 21.3739 18.6367 21.0789 18.4981C18.6874 17.3843 19.2124 17.8374 18.7351 17.4706C19.9501 16.033 21.8063 13.4776 22.379 9.99821C22.4353 9.61409 22.5072 9.073 22.4986 8.76192C22.494 8.57216 22.5377 8.49856 22.7545 8.47671C23.3536 8.40771 23.935 8.24383 24.4692 7.94999C26.0188 7.10357 26.6439 5.71318 26.7911 4.04678C26.8129 3.79204 26.7865 3.52869 26.5174 3.39471ZM13.0143 18.3946C10.6964 16.5724 9.5722 15.9726 9.10816 15.9985C8.67402 16.0244 8.75222 16.5212 8.84768 16.8449C8.94773 17.1646 9.07768 17.3849 9.25996 17.6655C9.38589 17.8512 9.47272 18.1272 9.13404 18.3348C8.38766 18.7965 7.08985 18.1796 7.0289 18.1491C5.51833 17.2595 4.25559 16.0853 3.36546 14.4793C2.50581 12.9337 2.0067 11.2753 1.92447 9.50542C1.90262 9.07818 2.02855 8.92695 2.45406 8.84932C3.01413 8.74582 3.59144 8.72397 4.15093 8.80619C6.51656 9.15178 8.53027 10.2092 10.2185 11.8848C11.1822 12.8388 11.9114 13.979 12.6623 15.0929C13.461 16.2757 14.3201 17.4027 15.4144 18.3268C15.8008 18.6505 16.109 18.8966 16.404 19.0783C15.5144 19.1778 14.0297 19.1991 13.0143 18.3958V18.3946ZM14.1252 11.2489C14.1252 11.0591 14.277 10.9079 14.4679 10.9079C14.511 10.9079 14.5501 10.9165 14.5852 10.9292C14.6329 10.9464 14.6766 10.9723 14.7111 11.0114C14.7721 11.0718 14.8066 11.158 14.8066 11.2489C14.8066 11.4386 14.6548 11.5899 14.4639 11.5899C14.273 11.5899 14.1252 11.4386 14.1252 11.2489ZM17.5759 13.0188C17.3545 13.1096 17.1331 13.1873 16.9203 13.1959C16.5903 13.2131 16.2303 13.0791 16.0348 12.9153C15.7312 12.6605 15.5139 12.5179 15.423 12.0734C15.3839 11.8837 15.4057 11.5899 15.4402 11.4214C15.5185 11.0585 15.4316 10.8257 15.1757 10.614C14.9676 10.4415 14.7025 10.3938 14.4115 10.3938C14.3029 10.3938 14.2034 10.3461 14.1292 10.3076C14.0079 10.2472 13.9078 10.096 14.0033 9.91023C14.0338 9.84985 14.1815 9.70322 14.216 9.67734C14.6111 9.45251 15.0665 9.52612 15.488 9.6946C15.8784 9.85445 16.174 10.1477 16.5989 10.5623C17.033 11.0631 17.1112 11.2011 17.3585 11.5772C17.554 11.871 17.7317 12.1729 17.8536 12.5185C17.9272 12.7341 17.8317 12.9107 17.5759 13.0188Z"/>
+    <radialGradient id="glow">
+      <stop offset="0%" stop-color="#4176e6" stop-opacity=".10"/>
+      <stop offset="100%" stop-color="#4176e6" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="ds" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#0d0d0d" flood-opacity=".14"/>
+    </filter>
+    <linearGradient id="mon" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#16406e"/>
+      <stop offset="1" stop-color="#3d7fd6"/>
+    </linearGradient>
+    <clipPath id="dc"><rect x="0" y="0" width="520" height="330" rx="12"/></clipPath>
+  </defs>
+
+  <rect width="720" height="420" fill="#eef1f5"/>
+  <circle cx="360" cy="200" r="280" fill="url(#glow)"/>
+
+  <g font-size="9.5" fill="#3a4450" text-anchor="middle">
+    <rect x="20" y="28" width="32" height="21" rx="2" fill="url(#mon)"/>
+    <path d="M24,46.5 L37,31.5 h4.5 L28.5,46.5 Z" fill="#8ec1f5" opacity=".45"/>
+    <path d="M30,49.5 h12 l3,5.5 h-18 Z" fill="#cfd8e3"/>
+    <rect x="26" y="55.5" width="20" height="2" rx="1" fill="#b9c4d2"/>
+    <text x="36" y="66">此电脑</text>
+    <rect x="25" y="101.5" width="22" height="4" rx="2" fill="#dfe6ee" stroke="#b9c4cf"/>
+    <path d="M27,107.5 L28.4,124.5 a2.2,2.2 0 0 0 2.2,2 h10.8 a2.2,2.2 0 0 0 2.2,-2 L45,107.5 Z" fill="#eef2f7" stroke="#b9c4cf"/>
+    <path d="M33,117.8 a4,4 0 0 1 6.6,-3.4" fill="none" stroke="#2f7cd6" stroke-width="1.8"/>
+    <path d="M39,114.7 a4,4 0 0 1 -6.6,3.4" fill="none" stroke="#2f7cd6" stroke-width="1.8"/>
+    <path d="M40.3,111.5 l-.3,3.1 -2.8,-1.3 Z" fill="#2f7cd6"/>
+    <path d="M31.7,121 l.3,-3.1 2.8,1.3 Z" fill="#2f7cd6"/>
+    <text x="36" y="138">回收站</text>
+    <use href="#whale" transform="translate(24,172) scale(0.9)" fill="#0d0d0d"/>
+    <text x="36" y="204">DeepSeek</text>
+    <text x="36" y="216">Harness</text>
+  </g>
+
+  <rect x="0" y="376" width="720" height="44" fill="#e9ecf1"/>
+  <rect x="0" y="376" width="720" height="1" fill="#d4d9e0"/>
+  <rect x="256.5" y="390.5" width="7" height="7" rx="1" fill="#0078d4"/>
+  <rect x="264.5" y="390.5" width="7" height="7" rx="1" fill="#0078d4"/>
+  <rect x="256.5" y="398.5" width="7" height="7" rx="1" fill="#0078d4"/>
+  <rect x="264.5" y="398.5" width="7" height="7" rx="1" fill="#0078d4"/>
+  <rect x="280" y="387" width="96" height="22" rx="11" fill="#ffffff" stroke="#d4d9e0"/>
+  <circle cx="295" cy="398" r="4.5" fill="none" stroke="#57606a" stroke-width="1.6"/>
+  <line x1="298.5" y1="401.5" x2="301.5" y2="404.5" stroke="#57606a" stroke-width="1.6" stroke-linecap="round"/>
+  <text x="307" y="402" font-size="10" fill="#8a8f98">搜索</text>
+  <circle cx="392" cy="398" r="8" fill="#35b1ea"/>
+  <path d="M384.5,399 a7.5,7.5 0 0 0 15,0" fill="none" stroke="#e8f4fd" stroke-width="3"/>
+  <path d="M413,403.5 v-11 a1.5,1.5 0 0 1 1.5,-1.5 h6.5 l3,3 h10 a1.5,1.5 0 0 1 1.5,1.5 v8 a1.5,1.5 0 0 1 -1.5,1.5 h-20 a1.5,1.5 0 0 1 -1.5,-1.5 z" fill="#f6c344" stroke="#d9a520"/>
+  <g>
+    <animate attributeName="opacity" values="1;1;0;0;1;1" keyTimes="0;.25;.33;.5875;.66;1" dur="8s" repeatCount="indefinite"/>
+    <use href="#whale" transform="translate(446,389.3) scale(0.75)" fill="#24292f"/>
+    <rect x="449" y="411" width="14" height="3" rx="1.5" fill="#3a3f47" opacity=".55"/>
+  </g>
+  <path d="M555.5,400.5 l5,-4.5 5,4.5" fill="none" stroke="#444c56" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <g transform="translate(584.5,398)">
+    <g>
+      <animateTransform attributeName="transform" type="scale" values="1;1;1.28;1;1" keyTimes="0;.53;.56;.59;1" dur="8s" repeatCount="indefinite"/>
+      <use href="#whale" transform="translate(-7,-6) scale(0.522)" fill="#24292f"/>
+    </g>
+  </g>
+  <path d="M602.5,395.5 a9,9 0 0 1 12,0 M605.5,399.2 a4.5,4.5 0 0 1 6,0" fill="none" stroke="#444c56" stroke-width="1.8" stroke-linecap="round"/>
+  <circle cx="608.5" cy="402.5" r="1.4" fill="#444c56"/>
+  <path d="M623,394.5 h3.5 l4.5,-4 v17 l-4.5,-4 h-3.5 z" fill="#444c56"/>
+  <path d="M634.5,393.5 a7.5,7.5 0 0 1 0,9" fill="none" stroke="#444c56" stroke-width="1.8" stroke-linecap="round"/>
+  <rect x="647" y="391.5" width="16" height="11" rx="2.5" fill="none" stroke="#444c56" stroke-width="1.5"/>
+  <rect x="649.5" y="394" width="8" height="6" rx="1" fill="#444c56"/>
+  <rect x="664.5" y="394.5" width="2" height="5" rx="1" fill="#444c56"/>
+  <text x="706" y="395" text-anchor="end" font-size="12" fill="#444c56">21:37</text>
+  <text x="706" y="407" text-anchor="end" font-size="8" fill="#57606a">08/30</text>
+
+  <g transform="translate(100,36)">
+    <animate attributeName="opacity" values="1;1;0;0;1;1" keyTimes="0;.25;.33;.5875;.66;1" dur="8s" repeatCount="indefinite"/>
+    <animateTransform attributeName="transform" type="translate" additive="sum" values="0 0;0 0;0 12;0 12;0 0;0 0" keyTimes="0;.25;.33;.5875;.66;1" dur="8s" repeatCount="indefinite"/>
+    <rect width="520" height="330" rx="12" fill="#ffffff" stroke="#e2e5ea" filter="url(#ds)"/>
+    <g clip-path="url(#dc)">
+      <rect width="104" height="330" fill="#f7f8fa"/>
+      <line x1="104" y1="0" x2="104" y2="330" stroke="#ececef" stroke-width="1"/>
+      <use href="#whale" transform="translate(16,18) scale(0.55)" fill="#0d0d0d"/>
+      <text x="34" y="27" font-size="10.5" font-weight="600" fill="#0d0d0d">deepseek</text>
+      <rect x="16" y="46" width="72" height="26" rx="7" fill="#ffffff" stroke="#e2e5ea"/>
+      <text x="52" y="63" text-anchor="middle" font-size="11" fill="#1f2328">新会话</text>
+      <text x="16" y="104" font-size="10.5" fill="#8a8f98">工作区</text>
+      <rect x="16" y="114" width="54" height="7" rx="3.5" fill="#0d0d0d" opacity=".12"/>
+      <rect x="16" y="127" width="42" height="7" rx="3.5" fill="#0d0d0d" opacity=".08"/>
+      <text x="16" y="298" font-size="11.5" fill="#57606a">设置</text>
+
+      <g>
+        <animate attributeName="opacity" values="1;1;0;0;1" keyTimes="0;.6875;.7625;.94375;1" dur="8s" repeatCount="indefinite"/>
+        <use href="#whale" transform="translate(296,90) scale(1.2)" fill="#0d0d0d"/>
+        <text x="312" y="162" text-anchor="middle" font-size="18" font-weight="600" fill="#1a1a1a">探索未至之境</text>
+        <rect x="372" y="147" width="46" height="18" rx="9" fill="#e8effc"/>
+        <text x="395" y="160" text-anchor="middle" font-size="10.5" fill="#4176e6">预览版</text>
+        <rect x="136" y="210" width="352" height="64" rx="14" fill="#ffffff" stroke="#c9cdd4" stroke-dasharray="4 4"/>
+        <text x="152" y="236" font-size="12" fill="#9aa1ab">选择一个工作区开始</text>
+        <circle cx="464" cy="258" r="12" fill="#4176e6"/>
+        <path d="M459,257.5 L464,252.5 L469,257.5 M464,252.5 L464,264.5" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+
+      <g opacity="0">
+        <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;.6875;.7625;.94375;1" dur="8s" repeatCount="indefinite"/>
+        <rect x="104" y="0" width="416" height="330" fill="#f7f8fa"/>
+        <rect x="140" y="82" width="344" height="176" rx="10" fill="#ffffff" stroke="#e4e7ec"/>
+        <text x="156" y="110" font-size="13.5" font-weight="600" fill="#1a1a1a">后端来源</text>
+        <text x="156" y="128" font-size="10.5" fill="#8a8f98">选择桌面壳启动哪个 dsh</text>
+        <circle cx="170" cy="156" r="7.5" fill="#ffffff" stroke="#c3c8cf" stroke-width="1.5"/>
+        <circle cx="170" cy="156" r="4" fill="#4176e6">
+          <animate attributeName="opacity" values="1;1;0;0" keyTimes="0;.805;.825;1" dur="8s" repeatCount="indefinite"/>
+        </circle>
+        <text x="186" y="160" font-size="12.5" fill="#1f2328">npm 全局</text>
+        <g>
+          <animate attributeName="opacity" values="1;1;0;0" keyTimes="0;.805;.825;1" dur="8s" repeatCount="indefinite"/>
+          <rect x="350" y="145" width="74" height="21" rx="10.5" fill="#eef1f5"/>
+          <text x="387" y="159.5" text-anchor="middle" font-size="10" fill="#57606a">0.1.1-rc.2</text>
+        </g>
+        <circle cx="170" cy="190" r="7.5" fill="#ffffff" stroke="#c3c8cf" stroke-width="1.5"/>
+        <circle cx="170" cy="190" r="4" fill="#4176e6" opacity="0">
+          <animate attributeName="opacity" values="0;0;1;1" keyTimes="0;.805;.825;1" dur="8s" repeatCount="indefinite"/>
+        </circle>
+        <text x="186" y="194" font-size="12.5" fill="#1f2328">本地源码目录</text>
+        <g opacity="0">
+          <animate attributeName="opacity" values="0;0;1;1" keyTimes="0;.805;.825;1" dur="8s" repeatCount="indefinite"/>
+          <rect x="350" y="179" width="90" height="21" rx="10.5" fill="#e9effc"/>
+          <text x="395" y="193.5" text-anchor="middle" font-size="10" fill="#3b66c4">0.1.2-alpha.1</text>
+        </g>
+        <rect x="368" y="216" width="100" height="28" rx="7" fill="#ffffff" stroke="#d0d4da"/>
+        <text x="418" y="234" text-anchor="middle" font-size="11.5" fill="#1f2328">检查更新</text>
+      </g>
+
+      <line x1="440" y1="17.5" x2="450" y2="17.5" stroke="#4b5563" stroke-width="1.6" stroke-linecap="round"/>
+      <rect x="460" y="12.5" width="10" height="10" rx="2" fill="none" stroke="#4b5563" stroke-width="1.6"/>
+      <rect x="474" y="6" width="22" height="22" rx="5" fill="#4176e6" opacity="0">
+        <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;.2;.25;.51;.56;1" dur="8s" repeatCount="indefinite"/>
+      </rect>
+      <path d="M480,12.5 L490,22.5 M490,12.5 L480,22.5" stroke="#4b5563" stroke-width="1.7" stroke-linecap="round">
+        <animate attributeName="opacity" values="1;1;0;0;1;1" keyTimes="0;.2;.25;.51;.56;1" dur="8s" repeatCount="indefinite"/>
+      </path>
+      <path d="M480,12.5 L490,22.5 M490,12.5 L480,22.5" stroke="#ffffff" stroke-width="1.7" stroke-linecap="round" opacity="0">
+        <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;.2;.25;.51;.56;1" dur="8s" repeatCount="indefinite"/>
+      </path>
+    </g>
+  </g>
+
+  <g>
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;.30;.34;.5875;.64;1" dur="8s" repeatCount="indefinite"/>
+    <animateTransform attributeName="transform" type="translate" values="0 8;0 8;0 0;0 0;0 8;0 8" keyTimes="0;.30;.34;.5875;.64;1" dur="8s" repeatCount="indefinite"/>
+    <path d="M420.5,322 H582.5 A8,8 0 0 1 590.5,330 V356 L584.5,364 L578.5,356 H420.5 A8,8 0 0 1 412.5,348 V330 A8,8 0 0 1 420.5,322 Z" fill="#1f2430"/>
+    <text x="501.5" y="343" text-anchor="middle" font-size="11" fill="#ffffff">已隐藏到托盘，后端仍在运行</text>
+  </g>
+
+  <circle cx="585" cy="53.5" r="1" fill="none" stroke="#4176e6" stroke-width="2" opacity="0">
+    <animate attributeName="r" values="1;1;4;16;16" keyTimes="0;.24;.25;.30;1" dur="8s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0;0;.55;0;0" keyTimes="0;.24;.25;.30;1" dur="8s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="584.5" cy="398" r="1" fill="none" stroke="#4176e6" stroke-width="2" opacity="0">
+    <animate attributeName="r" values="1;1;4;14;14" keyTimes="0;.575;.581;.625;1" dur="8s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0;0;.55;0;0" keyTimes="0;.575;.581;.625;1" dur="8s" repeatCount="indefinite"/>
+  </circle>
+
+  <g opacity="0">
+    <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;.025;.075;.875;.925;1" dur="8s" repeatCount="indefinite"/>
+    <animateTransform attributeName="transform" type="translate" values="664 320;664 320;583 51;583 51;582.5 394;582.5 394" keyTimes="0;.1125;.2;.5125;.5875;1" dur="8s" repeatCount="indefinite"/>
+    <path d="M0,0 L0,15 L4,11.6 L6.4,16.6 L9,15.4 L6.6,10.6 L11,10 Z" fill="#ffffff" stroke="#1f2328" stroke-width="1.2" stroke-linejoin="round"/>
+  </g>
+</svg>

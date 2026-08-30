@@ -17,4 +17,6 @@ build/icon.icns
 .zcode/
 .reasonix/
 pnpm-lock.yaml
-docs/
+docs/*
+# README banner / demo 动图需随仓库发布
+!docs/*.svg

@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="./assets/wordmark.svg" alt="DeepSeek Harness Desktop" width="360" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/banner-zh-dark.svg">
+    <img src="docs/banner-zh.svg" alt="DeepSeek Harness Desktop" width="720">
+  </picture>
 </p>
 
 # DeepSeek Harness Desktop
@@ -14,6 +17,10 @@
 [![Last commit](https://img.shields.io/github/last-commit/HaoyueQin/deepseek-harness-desktop?style=flat-square)](https://github.com/HaoyueQin/deepseek-harness-desktop/commits)
 
 为 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DeepSeek 开源的可插拔 AI Agent harness）打造的桌面应用壳，把官方 `dsh web` 界面包装成原生质感、常驻后台的桌面应用，**直接复用你已安装的 `dsh` 命令行工具**。
+
+<p align="center">
+  <img src="docs/demo-zh.svg" alt="DeepSeek Harness Desktop 演示" width="720">
+</p>
 
 [English](README.md) | 简体中文
 

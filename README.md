@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="./assets/wordmark.svg" alt="DeepSeek Harness Desktop" width="360" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/banner-dark.svg">
+    <img src="docs/banner.svg" alt="DeepSeek Harness Desktop" width="720">
+  </picture>
 </p>
 
 # DeepSeek Harness Desktop
@@ -14,6 +17,10 @@
 [![Last commit](https://img.shields.io/github/last-commit/HaoyueQin/deepseek-harness-desktop?style=flat-square)](https://github.com/HaoyueQin/deepseek-harness-desktop/commits)
 
 A desktop shell for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — the pluggable AI agent harness from DeepSeek. Wrap the official `dsh web` UI into a native-feeling, always-on desktop app, **reusing the `dsh` CLI you already have**.
+
+<p align="center">
+  <img src="docs/demo.svg" alt="DeepSeek Harness Desktop demo" width="720">
+</p>
 
 English | [简体中文](README.zh.md)
 
