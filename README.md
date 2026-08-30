@@ -7,6 +7,8 @@
 
 # DeepSeek Harness Desktop
 
+English | [简体中文](README.zh.md)
+
 [![Release](https://img.shields.io/github/v/release/HaoyueQin/deepseek-harness-desktop?style=flat-square&logo=github)](https://github.com/HaoyueQin/deepseek-harness-desktop/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/HaoyueQin/deepseek-harness-desktop/release.yml?style=flat-square&label=build)](https://github.com/HaoyueQin/deepseek-harness-desktop/actions)
 [![Stars](https://img.shields.io/github/stars/HaoyueQin/deepseek-harness-desktop?style=flat-square)](https://github.com/HaoyueQin/deepseek-harness-desktop/stargazers)
@@ -21,8 +23,6 @@ A desktop shell for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-h
 <p align="center">
   <img src="docs/demo.svg" alt="DeepSeek Harness Desktop demo" width="720">
 </p>
-
-English | [简体中文](README.zh.md)
 
 ## Features
 
