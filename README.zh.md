@@ -10,6 +10,8 @@
 [![License](https://img.shields.io/github/license/HaoyueQin/deepseek-harness-desktop?style=flat-square)](LICENSE)
 [![Issues](https://img.shields.io/github/issues/HaoyueQin/deepseek-harness-desktop?style=flat-square)](https://github.com/HaoyueQin/deepseek-harness-desktop/issues)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-4176e6?style=flat-square)]()
+[![Commit activity](https://img.shields.io/github/commit-activity/t/HaoyueQin/deepseek-harness-desktop?style=flat-square)](https://github.com/HaoyueQin/deepseek-harness-desktop/graphs/commit-activity)
+[![Last commit](https://img.shields.io/github/last-commit/HaoyueQin/deepseek-harness-desktop?style=flat-square)](https://github.com/HaoyueQin/deepseek-harness-desktop/commits)
 
 为 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DeepSeek 开源的可插拔 AI Agent harness）打造的桌面应用壳，把官方 `dsh web` 界面包装成原生质感、常驻后台的桌面应用，**直接复用你已安装的 `dsh` 命令行工具**。
 
@@ -150,6 +152,10 @@ assets/
 
 - [新建 issue](https://github.com/HaoyueQin/deepseek-harness-desktop/issues)（中文或 English 均可）
 - harness 本身的问题，可同步查阅上游 [deepseek-harness discussions](https://github.com/deepseek-ai/deepseek-harness/discussions)
+
+## 活跃度
+
+[![HaoyueQin/deepseek-harness-desktop GitStock K-Line Chart](https://gitstock.org/HaoyueQin/deepseek-harness-desktop/stock.svg)](https://gitstock.org/HaoyueQin/deepseek-harness-desktop)
 
 ## 许可
 

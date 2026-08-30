@@ -10,6 +10,8 @@
 [![License](https://img.shields.io/github/license/HaoyueQin/deepseek-harness-desktop?style=flat-square)](LICENSE)
 [![Issues](https://img.shields.io/github/issues/HaoyueQin/deepseek-harness-desktop?style=flat-square)](https://github.com/HaoyueQin/deepseek-harness-desktop/issues)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-4176e6?style=flat-square)]()
+[![Commit activity](https://img.shields.io/github/commit-activity/t/HaoyueQin/deepseek-harness-desktop?style=flat-square)](https://github.com/HaoyueQin/deepseek-harness-desktop/graphs/commit-activity)
+[![Last commit](https://img.shields.io/github/last-commit/HaoyueQin/deepseek-harness-desktop?style=flat-square)](https://github.com/HaoyueQin/deepseek-harness-desktop/commits)
 
 A desktop shell for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — the pluggable AI agent harness from DeepSeek. Wrap the official `dsh web` UI into a native-feeling, always-on desktop app, **reusing the `dsh` CLI you already have**.
 
@@ -150,6 +152,10 @@ Found a bug? Have a feature idea? **Issues are very welcome** — bug reports, u
 
 - [Open an issue](https://github.com/HaoyueQin/deepseek-harness-desktop/issues) (English or 中文, either is fine)
 - For harness-level problems, also check upstream [deepseek-harness discussions](https://github.com/deepseek-ai/deepseek-harness/discussions)
+
+## Activity
+
+[![HaoyueQin/deepseek-harness-desktop GitStock K-Line Chart](https://gitstock.org/HaoyueQin/deepseek-harness-desktop/stock.svg)](https://gitstock.org/HaoyueQin/deepseek-harness-desktop)
 
 ## License
 
