@@ -3,7 +3,7 @@
  *
  * 源码启动是通用能力，不绑定任何特定版本：spawn 形态
  * `node --import tsx/esm apps/cli/src/bin.ts web …`（cwd=仓库根）已实证
- * 对 dsh-v0.1.0-rc.8 ～ dsh-v0.1.2-alpha.1 逐字一致（根 package.json 的
+ * 对 dsh-v0.1.0-rc.8 ～ dsh-v0.1.2-alpha.3 逐字一致（根 package.json 的
  * "dsh" script、tsx devDep、入口路径四 tag 相同）；一切版本差异（URL token、
  * --no-open）由调用方按 readSourceVersion 的版本号门控，与本模块无关。
  *
