@@ -2,7 +2,8 @@
  * 后端（用户已装的 dsh CLI）版本检测与一键升级（纯壳架构）。
  * 与 updater.ts（桌壳自身 electron-updater）正交。
  *
- * 检测：`npm view @deepseek-ai/dsh@latest version` 与当前版本比较；
+ * 检测：`npm view @deepseek-ai/dsh dist-tags --json` 解析后取高于当前的最高
+ * 版本（含 alpha/next 等预发布渠道，见 dsh-update-target）与当前版本比较；
  * 升级：`npm i -g @deepseek-ai/dsh@<版本>`，完成后经 main 注入的
  * restart 处理器重启后端并重载窗口。全程走系统 npm（能装 dsh 必有 npm），
  * 代理经环境变量注入（与 pnpm 一致，见 settings.networkProxyEnv）。
@@ -11,6 +12,7 @@
 import { spawn } from 'node:child_process'
 import { log } from './log.js'
 import { locateDsh } from './dsh-locator.js'
+import { resolveUpdateTarget } from './dsh-update-target.js'
 import { networkProxyEnv } from './settings.js'
 
 export type UpdateStage = 'idle' | 'checking' | 'updating' | 'done' | 'error'
@@ -18,8 +20,10 @@ export type UpdateStage = 'idle' | 'checking' | 'updating' | 'done' | 'error'
 export interface BackendUpdateStatus {
   /** 用户当前 dsh 版本。 */
   current: string
-  /** npm 上最新版；与当前相同则为 null（无更新）。 */
+  /** 目标更新版本（高于当前的最高版，含预发布渠道）；无则为 null。 */
   latest: string | null
+  /** latest 是否高于 npm 稳定版（来自 alpha/next 等预发布 tag）。 */
+  latestPrerelease?: boolean
   stage: UpdateStage
   error?: string
   /** 完成过一次检查（成功）；false = 尚未检查，UI 不得显示「已是最新版本」。 */
@@ -44,13 +48,10 @@ export function initBackendUpdater(current: string): void {
   status.current = current
 }
 
-/** npm 版本串白名单（semver：核心 3 段 + 可选预发布/构建元数据）；防注入命令行。 */
-const SEMVER_RE = /^\d+\.\d+\.\d+([-+][0-9A-Za-z.-]+)?$/
-
 function runNpm(args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
-    // 参数为受控字面量（含动态版本串的调用方已过 SEMVER_RE 白名单）；Windows
-    // 经 ComSpec /c 解析 .cmd shim（shell:true+args 数组在 Node≥22 有 DEP0190 警告）
+    // 参数为受控字面量（动态版本串来自 resolveUpdateTarget 的 SEMVER_RE 过滤）；
+    // Windows 经 ComSpec /c 解析 .cmd shim（shell:true+args 数组在 Node≥22 有 DEP0190 警告）
     const cmdStr = ['npm', ...args].join(' ')
     const isWin = process.platform === 'win32'
     const child = spawn(isWin ? process.env.ComSpec ?? 'cmd' : 'npm',
@@ -77,8 +78,12 @@ export async function checkBackendUpdate(): Promise<BackendUpdateStatus> {
   status.error = undefined
   publish()
   try {
-    const latest = await runNpm(['view', '@deepseek-ai/dsh@latest', 'version'])
-    status.latest = latest === '' || latest === currentVersion ? null : latest
+    const distTags = JSON.parse(
+      await runNpm(['view', '@deepseek-ai/dsh', 'dist-tags', '--json']),
+    ) as Record<string, string>
+    const target = resolveUpdateTarget(distTags, currentVersion)
+    status.latest = target?.version ?? null
+    status.latestPrerelease = target?.prerelease ?? false
     status.stage = 'idle'
     status.checked = true // 检查成功（无论有无新版）才标记，UI 据此显示「已是最新版本」
   } catch (err) {

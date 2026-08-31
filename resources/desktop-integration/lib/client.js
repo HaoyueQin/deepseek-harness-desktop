@@ -558,7 +558,7 @@ window.__ModuleLoader__.load({
 				const detail = backendIsGit
 					? "将从源码仓库检出该版本并重新构建（pnpm install + build，可能需要数分钟），完成后重启后端。"
 					: "更新需要重启后端。"
-				if (!window.confirm(`检测到新版后端 ${backendStatus.latest}。${detail}确定更新？`)) return
+				if (!window.confirm(`检测到${backendStatus.latestPrerelease ? "预发布" : ""}新版后端 ${backendStatus.latest}。${detail}确定更新？`)) return
 				setBackendStatus((s) => ({ ...s, stage: "updating", error: null }))
 				backend.update().then((r) => setBackendStatus((prev) => ({ ...prev, ...r }))).catch(() => {})
 			}
@@ -728,8 +728,8 @@ window.__ModuleLoader__.load({
 								// 必须显示失败原因而非「更新完成，正在重启…」的永久假象
 								: backendStatus.error ? `更新失败：${backendStatus.error}`
 								: backendStatus.stage === "done" ? "更新完成，正在重启…"
-								: backendStatus.latest
-									? `当前 ${backendStatus.current}${sourceSuffix} → 发现新版 ${backendStatus.latest}`
+									: backendStatus.latest
+										? `当前 ${backendStatus.current}${sourceSuffix} → 发现${backendStatus.latestPrerelease ? "预发布" : ""}新版 ${backendStatus.latest}`
 									: backendStatus.checked
 										? React.createElement("span", {},
 											`当前 ${backendStatus.current}${sourceSuffix}`,
