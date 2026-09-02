@@ -1,6 +1,6 @@
 /**
  * npm dist-tags → 后端更新目标选择（纯函数，无 electron 依赖，可被 `node --test`
- * 直测 dist 产物）。dist-tags 形如 {"latest":"0.1.1-rc.2","alpha":"0.1.2-alpha.4"}。
+ * 直测 dist 产物）。dist-tags 形如 {"latest":"0.1.1-rc.2","alpha":"0.1.2-alpha.5"}。
  *
  * 语义：取全部 tag 值中高于 current 的最高版本（含 alpha/next 等预发布渠道）；
  * 无更高版本返回 null——当前已是最高时不提示「降级到 latest」，曾因缺这层
