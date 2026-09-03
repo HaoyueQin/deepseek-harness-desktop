@@ -97,4 +97,13 @@ contextBridge.exposeInMainWorld('dshDesktop', {
       ipcRenderer.on('dsh-source:exit', (_event, code: number | null) => cb(code))
     },
   },
+  recovery: {
+    getState: (): Promise<unknown> => ipcRenderer.invoke('recovery:get-state'),
+    exitRestart: (): Promise<{ ok: boolean; busy?: boolean; error?: string }> =>
+      ipcRenderer.invoke('recovery:exit-restart'),
+    openLogFile: (): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('recovery:open-log-file'),
+    copyDiagnosis: (): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('recovery:copy-diagnosis'),
+  },
 })

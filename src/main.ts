@@ -9,7 +9,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell } from 'electron'
 import { startDsh, isTcpPortFree, type DshControl } from './dsh/spawn.js'
 import { createTray, syncTrayAutostart, type TrayHandlers } from './tray.js'
-import { dshHomeDir, iconPath, preloadPath, resourcesDir } from './paths.js'
+import { dshHomeDir, iconPath, preloadPath, recoveryPagePath, resourcesDir } from './paths.js'
 import {
   getLaunchMinimized, setLaunchMinimized, getPortPolicy, setPortPolicy,
   getBackendSource, setBackendSource, getSourceDir, setSourceDir,
@@ -31,6 +31,8 @@ import {
 } from './dsh-source-updater.js'
 import { locateDsh, type LocatedDsh } from './dsh-locator.js'
 import { locateSourceDsh, validateSourceDir, OFFICIAL_REPO_URL } from './dsh-source.js'
+import { enterRecovery, getRecoveryContext, clearRecoveryContext } from './recovery/state.js'
+import { parseFailure, sanitizeLog } from './recovery/parse-failure.js'
 // electron-updater 的 update-downloaded 事件带 downloadedFile（本地完整路径），
 // UpdateInfo.path 只是 latest.yml 里的相对文件名，spawn 会 ENOENT。
 import type { UpdateDownloadedEvent } from 'electron-updater'
@@ -55,6 +57,31 @@ let backendNotice: string | null = null
 let dshPortActual: number | null = null
 /** 本次是否因配置的固定端口被占而降级随机（页面 localStorage 侧设置本次不保留）。 */
 let dshPortDegraded = false
+
+/**
+ * 组装恢复上下文：快照脱敏 + 解析诊断（handover §7.3 数据流）。
+ * rawOutput 调用方保证来自 dsh.recentOutput()（或错误串）。
+ */
+function buildRecoveryContext(
+  kind: 'crashed' | 'boot-failed' | 'maintenance',
+  code: number | null,
+  signal: string | null,
+  rawOutput: string,
+): void {
+  const outputTail = sanitizeLog(rawOutput)
+  enterRecovery({
+    kind, code, signal, outputTail,
+    diagnosis: parseFailure(outputTail),
+    dshVersion: readDshVersion(),
+    dshSource: locatedDsh?.source ?? null,
+  })
+}
+
+/** 切到恢复页并确保窗口可见（可能正隐藏在托盘）。 */
+async function showRecoveryPage(): Promise<void> {
+  showWindow()
+  await win?.loadFile(recoveryPagePath())
+}
 
 /**
  * 用户 dsh 版本（locateDsh 检测结果）。未检测到返回 'unknown'。
@@ -484,13 +511,10 @@ function spawnDshAttempt(located: LocatedDsh, port: number | undefined): DshCont
   void dsh.url.then(() => { ready = true }, () => { /* 启动期失败由调用方处理 */ })
   dsh.exited.then(({ expected, code, signal }) => {
     log(`dsh 进程退出: expected=${expected} code=${String(code)} signal=${String(signal)}`)
-    if (!expected && !quitting && ready) {
-      void dialog.showMessageBox({
-        type: 'error',
-        title: 'DeepSeek Harness 意外退出',
-        message: `后端进程意外退出（code=${String(code)}）。`,
-        buttons: ['退出'],
-      }).then(() => app.quit())
+    // 意外退出 → 恢复模式：不弹窗不退出，切壳原生恢复页（handover §7.2）
+    if (!expected && !quitting && ready && dsh !== null) {
+      buildRecoveryContext('crashed', code, signal, dsh.recentOutput())
+      void showRecoveryPage()
     }
   })
   return dsh
@@ -582,6 +606,41 @@ async function restartEffectiveBackend(): Promise<void> {
   win?.webContents.send('dsh-backend:update-status', { stage: 'restarting', message: '正在重启后端…' })
   await startDshAndLoad(locatedDsh)
   pushBackendNotice()
+}
+
+/**
+ * 恢复模式 IPC：get-state 供恢复页渲染；exit-restart 清上下文并走
+ * 统一重启（restartEffectiveBackend 会 loadURL 回 dsh 页面）；重启失败
+ * 重新进入 boot-failed 上下文，页面留在恢复页刷新状态。
+ */
+function registerRecoveryIpc(): void {
+  let restarting = false
+  ipcMain.handle('recovery:get-state', () => getRecoveryContext())
+  ipcMain.handle('recovery:exit-restart', async () => {
+    if (restarting) return { ok: false, busy: true }
+    restarting = true
+    clearRecoveryContext()
+    try {
+      await restartEffectiveBackend()
+      return { ok: true }
+    } catch (err) {
+      log(`recovery:exit-restart 失败 ${String(err)}`)
+      buildRecoveryContext('boot-failed', null, null, String(err))
+      return { ok: false, error: String(err) }
+    } finally {
+      restarting = false
+    }
+  })
+  ipcMain.handle('recovery:open-log-file', async () => {
+    const err = await shell.openPath(join(app.getPath('userData'), 'logs'))
+    return err === '' ? { ok: true } : { ok: false, error: err }
+  })
+  ipcMain.handle('recovery:copy-diagnosis', () => {
+    const c = getRecoveryContext()
+    if (c === null) return { ok: false, error: 'no context' }
+    clipboard.writeText(JSON.stringify(c, null, 2))
+    return { ok: true }
+  })
 }
 
 /** 引导安装 IPC：复制命令 / 壳内一键安装 / 重新检测。 */
@@ -789,6 +848,7 @@ function main(): void {
     registerAppIpc()
     registerSetupIpc()
     registerSourceIpc()
+    registerRecoveryIpc()
     const trayHandlers: TrayHandlers = { show: showWindow, quit: () => void quitApp() }
     createTray(iconPath(), trayHandlers)
 
