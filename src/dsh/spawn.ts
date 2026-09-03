@@ -15,6 +15,7 @@ import { existsSync } from 'node:fs'
 import { createConnection } from 'node:net'
 import { waitForHttp } from './ready.js'
 import { UrlLineMatcher } from './url-line.js'
+import { OutputRingBuffer } from '../recovery/ring-buffer.js'
 import { desktopPatchPath } from '../paths.js'
 
 /**
@@ -62,6 +63,8 @@ export interface DshControl {
   url: Promise<string>
   /** 停止 dsh：kill 后等待退出，超时强杀。 */
   stop: () => Promise<void>
+  /** 最近合并输出快照（stdout+stderr，原文未脱敏；供异常退出诊断）。 */
+  recentOutput: () => string
 }
 
 export function startDsh(options: StartDshOptions): DshControl {
@@ -77,6 +80,9 @@ export function startDsh(options: StartDshOptions): DshControl {
   // --no-open（dsh ≥0.1.0-rc.8 的 web 透传 flag，支持版本恒满足）：dsh web
   // 默认会用系统浏览器打开就绪地址，桌面端自带窗口，必须关掉，否则每次
   // 启动都多弹一个浏览器标签。放透传区（--port 之后），不影响 stdout URL 就绪行。
+  // stdout+stderr 合并滚动快照：异常退出时作为诊断材料（消费侧脱敏 token）
+  const recent = new OutputRingBuffer()
+
   const child = spawn(nodePath, [...nodeArgs, dshBin, 'web', ...patchArgs, '--port', String(port), '--no-open'], {
     cwd,
     env: { ...process.env, DSH_HOME: dshHome },
@@ -97,6 +103,7 @@ export function startDsh(options: StartDshOptions): DshControl {
 
   const onStdout = (chunk: Buffer): void => {
     const text = chunk.toString()
+    recent.push(text)
     onLog(text.trimEnd())
     if (settled || urlFound) return
     const found = urlLine.push(text)
@@ -117,7 +124,10 @@ export function startDsh(options: StartDshOptions): DshControl {
   }
 
   child.stdout?.on('data', onStdout)
-  child.stderr?.on('data', (chunk: Buffer) => onLog(chunk.toString().trimEnd()))
+  child.stderr?.on('data', (chunk: Buffer) => {
+    recent.push(chunk.toString())
+    onLog(chunk.toString().trimEnd())
+  })
   child.on('error', (err) => {
     settled = true
     urlReject(err)
@@ -159,5 +169,5 @@ export function startDsh(options: StartDshOptions): DshControl {
     })
   }
 
-  return { exited, url, stop }
+  return { exited, url, stop, recentOutput: () => recent.text() }
 }
