@@ -46,6 +46,15 @@ import { INJECT_TITLEBAR } from './titlebar.js'
 let win: BrowserWindow | null = null
 let dsh: DshControl | null = null
 let quitting = false
+
+// dev 隔离（未打包时生效）：userData 与 DSH_HOME 各自独立——单实例锁与打包版
+// 互不影响（可同时运行），设置/日志/更新状态隔离，dsh 跑在专用 DSH_HOME，
+// 不触碰用户真实 profile。必须在 requestSingleInstanceLock 之前设置。
+if (!app.isPackaged) {
+  const devData = join(app.getPath('appData'), 'deepseek-harness-desktop-dev')
+  app.setPath('userData', devData)
+  process.env.DSH_HOME = join(devData, 'dsh-home')
+}
 /** 生效后端（npm 全局或 git 源码目录；纯壳架构：壳不内置运行时）。 */
 let locatedDsh: LocatedDsh | null = null
 /**
