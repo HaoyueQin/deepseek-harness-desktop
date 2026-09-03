@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>DeepSeek Harness · 恢复模式</title>
+<style>
+  /* 深色主题与壳一致（LOADING_HTML/SETUP_HTML 同款基色）。刻意不含 #root
+     元素：标题栏注入（src/titlebar.ts）以 #root 缺失跳过本页，拖拽条自备。 */
+  :root {
+    --bg: #1a1a1a; --panel: #111; --line: #333; --text: #e8e8e8;
+    --muted: #aab3c0; --faint: #6b7686; --accent: #4d9fff; --brand: #4176E6;
+    --warn: #e6b441; --bad: #e66d5a; --ok: #58b368;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+         font: 14px/1.7 system-ui, sans-serif; }
+  /* 26px 自绘标题条：frameless 窗口的拖拽区与窗口控制（与 titlebar.ts 同高） */
+  #titlebar { position: fixed; top: 0; left: 0; right: 0; height: 26px; z-index: 9999;
+              display: flex; align-items: stretch; justify-content: space-between;
+              -webkit-app-region: drag; background: var(--bg); }
+  #titlebar .t { font-size: 12px; color: var(--faint); align-self: center; padding: 0 12px; }
+  #titlebar .btns { display: flex; }
+  #titlebar button { width: 46px; height: 26px; border: 0; margin: 0; padding: 0;
+                     background: transparent; color: var(--muted); cursor: default;
+                     display: flex; align-items: center; justify-content: center;
+                     -webkit-app-region: no-drag; font-size: 11px; }
+  #titlebar button:hover { background: var(--brand); color: #fff; }
+  main { max-width: 860px; margin: 0 auto; padding: 42px 24px 32px; }
+  h1 { font-size: 19px; margin: 0 0 4px; }
+  .sub { color: var(--faint); font-size: 12px; margin: 0 0 20px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+          padding: 14px 16px; margin: 12px 0; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 999px;
+           font-size: 12px; border: 1px solid var(--line); color: var(--muted); }
+  .badge.bad { color: var(--bad); border-color: var(--bad); }
+  .badge.warn { color: var(--warn); border-color: var(--warn); }
+  .chip { display: inline-block; padding: 2px 10px; margin: 2px 4px 2px 0; border-radius: 6px;
+          background: #24161a; border: 1px solid #5a3a42; color: #f0a898;
+          font-family: Consolas, monospace; font-size: 12px; }
+  .label { color: var(--faint); font-size: 12px; }
+  .diag-title { font-size: 15px; margin: 2px 0 6px; }
+  p { color: var(--muted); margin: 8px 0; }
+  pre { background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+        padding: 12px; margin: 8px 0 0; white-space: pre-wrap; word-break: break-all;
+        font-size: 12px; color: #9aa4b2; max-height: 260px; overflow-y: auto; }
+  button.act { border: none; border-radius: 6px; padding: 9px 18px; cursor: pointer;
+               font-size: 13px; background: var(--brand); color: #fff; }
+  button.act:disabled { opacity: .5; cursor: default; }
+  button.ghost { background: transparent; border: 1px solid #444; color: var(--text); }
+  button.ghost:hover { border-color: var(--accent); }
+  .primary { font-size: 14px; padding: 11px 22px; }
+  .hint { font-size: 12px; color: var(--faint); }
+</style>
+</head>
+<body>
+<div id="titlebar">
+  <span class="t">DeepSeek Harness · 恢复模式</span>
+  <span class="btns">
+    <button id="btnMin" title="最小化">─</button>
+    <button id="btnMax" title="最大化/还原">□</button>
+    <button id="btnClose" title="关闭（隐藏到托盘）">✕</button>
+  </span>
+</div>
+
+<main>
+  <h1>恢复模式</h1>
+  <p class="sub">dsh 无法正常运行时，在这里诊断与处置。修复动作完成后点「重启 dsh 并返回」。</p>
+
+  <div class="card">
+    <div class="row">
+      <span id="badge" class="badge">…</span>
+      <span class="label" id="meta"></span>
+    </div>
+    <div id="diag" class="diag-title">正在读取诊断…</div>
+    <div id="plugins" class="row"></div>
+    <p id="advice" class="hint"></p>
+  </div>
+
+  <div class="card">
+    <div class="row" style="justify-content: space-between">
+      <span class="label">后端输出快照（最近 200 行，token 已脱敏）</span>
+      <button class="act ghost" id="toggleSnap" style="padding: 3px 12px; font-size: 12px">展开</button>
+    </div>
+    <pre id="snap" style="display: none"></pre>
+  </div>
+
+  <div class="row" style="margin-top: 18px">
+    <button class="act primary" id="btnRestart">重启 dsh 并返回</button>
+    <button class="act ghost" id="btnLog">打开日志目录</button>
+    <button class="act ghost" id="btnCopy">复制诊断信息</button>
+  </div>
+  <p class="hint">也可以直接关闭窗口——桌面壳会留在托盘，下次打开仍是本页；「重启 dsh 并返回」随时可用。</p>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id)
+  const bridge = window.dshDesktop
+
+  // 窗口控制（frameless：本页不被 titlebar 注入覆盖，控制自备）
+  $('btnMin').onclick = () => bridge.minimize()
+  $('btnMax').onclick = () => bridge.maximizeToggle()
+  $('btnClose').onclick = () => bridge.close()
+
+  const KIND_TEXT = {
+    'crashed': 'dsh 已意外退出',
+    'boot-failed': 'dsh 启动失败',
+    'maintenance': '恢复中心',
+  }
+
+  function renderDiag(s) {
+    const badge = $('badge')
+    badge.textContent = KIND_TEXT[s.kind] ?? s.kind
+    badge.className = 'badge ' + (s.kind === 'maintenance' ? '' : 'bad')
+    $('meta').textContent =
+      'dsh ' + s.dshVersion + (s.dshSource === 'git-local' ? '（源码构建）' : s.dshSource === 'npm-global' ? '（npm 全局）' : '') +
+      ' · 进入时间 ' + new Date(s.enteredAt).toLocaleString() +
+      (s.code !== null ? ' · 退出码 ' + s.code : '')
+
+    const diag = $('diag'), plugins = $('plugins'), advice = $('advice')
+    plugins.textContent = ''
+    if (s.diagnosis.kind === 'plugin-load-failure') {
+      diag.textContent = '检测到插件加载失败：'
+      for (const name of s.diagnosis.plugins) {
+        const c = document.createElement('span')
+        c.className = 'chip'
+        c.textContent = name
+        plugins.appendChild(c)
+      }
+      advice.textContent = '常见原因是插件与当前 dsh 版本不适配：可回退 dsh 到升级前版本，或等待插件更新。'
+    } else if (s.diagnosis.kind === 'port-conflict') {
+      diag.textContent = '端口被占用，dsh 无法监听'
+      advice.textContent = '可在设置页把端口策略改为随机端口后重启。'
+    } else {
+      diag.textContent = '未能自动定位失败原因'
+      advice.textContent = '请查看下方输出快照或完整日志定位问题；修复后点「重启 dsh 并返回」。'
+    }
+  }
+
+  let expanded = false
+  $('toggleSnap').onclick = () => {
+    expanded = !expanded
+    $('snap').style.display = expanded ? 'block' : 'none'
+    $('toggleSnap').textContent = expanded ? '折叠' : '展开'
+  }
+
+  $('btnRestart').onclick = async () => {
+    $('btnRestart').disabled = true
+    $('btnRestart').textContent = '正在重启 dsh…'
+    const r = await bridge.recovery.exitRestart()
+    if (r.ok !== true) {
+      // 重启失败：主进程已重写为 boot-failed 上下文，留在本页刷新
+      $('btnRestart').disabled = false
+      $('btnRestart').textContent = '重启 dsh 并返回'
+      await render()
+      alert('重启失败：' + (r.error ?? '未知原因'))
+    }
+    // 成功时主进程已切回 dsh 页面，本页随之销毁
+  }
+  $('btnLog').onclick = () => bridge.recovery.openLogFile()
+  $('btnCopy').onclick = async () => {
+    const r = await bridge.recovery.copyDiagnosis()
+    if (r.ok === true) {
+      $('btnCopy').textContent = '已复制'
+      setTimeout(() => { $('btnCopy').textContent = '复制诊断信息' }, 1500)
+    }
+  }
+
+  async function render() {
+    const s = await bridge.recovery.getState()
+    if (s === null) {
+      $('badge').textContent = '恢复中心'
+      $('diag').textContent = '当前无恢复上下文（手动进入的维护模式）。'
+      $('meta').textContent = ''
+      return
+    }
+    renderDiag(s)
+    $('snap').textContent = s.outputTail !== '' ? s.outputTail : '（无输出）'
+  }
+  render().catch((e) => { $('diag').textContent = '渲染失败: ' + String(e) })
+</script>
+</body>
+</html>

@@ -558,7 +558,7 @@ async function startDshAndLoad(located: LocatedDsh): Promise<void> {
 
 /**
  * 解析生效后端（npm 全局 / git 源码目录，按用户偏好与可用性）并启动。
- * @returns 'ok' 已启动；'not-found' 两个来源都不可用（调用方展示引导页）；'failed' 启动失败（已弹窗并退出）。
+ * @returns 'ok' 已启动；'not-found' 两个来源都不可用（调用方展示引导页）；'failed' 启动失败（已进入恢复页）。
  */
 async function bootWithLocatedDsh(): Promise<'ok' | 'not-found' | 'failed'> {
   const resolved = resolveBackend()
@@ -577,11 +577,13 @@ async function bootWithLocatedDsh(): Promise<'ok' | 'not-found' | 'failed'> {
   } catch (err) {
     log(`dsh 启动失败: ${String(err)}`)
     if (!quitting) {
-      // 失败时 dsh 可能已监听端口（仅 HTTP 探测失败），先停掉再退出，
-      // 防止 dsh 变孤儿进程常驻后台、占用 DSH_HOME 文件锁
+      // 失败时 dsh 可能已监听端口（仅 HTTP 探测失败），先停掉，
+      // 防止 dsh 变孤儿进程常驻后台、占用 DSH_HOME 文件锁。
+      // stop() 对已退出进程安全（spawn.ts 内 exitCode 检查直接返回）。
       if (dsh !== null) await dsh.stop()
-      await dialog.showErrorBox('DeepSeek Harness 启动失败', String(err))
-      app.quit()
+      // 启动失败 → 恢复模式（boot-failed）：不再弹窗退出（handover §7.2）
+      buildRecoveryContext('boot-failed', null, null, dsh?.recentOutput() ?? String(err))
+      await showRecoveryPage()
     }
     return 'failed'
   }
