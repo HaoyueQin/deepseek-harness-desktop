@@ -54,9 +54,10 @@ jobs:
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
           ELECTRON_BUILDER_BINARIES_MIRROR: https://npmmirror.com/mirrors/electron-builder-binaries/
 
-      # 纯壳架构：dsh 运行时不内置；smoke 用 runner 上全局安装的 dsh
+      # 纯壳架构：dsh 运行时不内置；smoke 用 runner 上全局安装的 dsh。
+      # 支持版本为 dsh ≥0.1.2-rc.1（npm next 渠道）；不再用 latest（=0.1.1-rc.2，旧版）冒烟。
       - name: Install dsh CLI (for smoke)
-        run: npm i -g @deepseek-ai/dsh
+        run: npm i -g @deepseek-ai/dsh@next
 
       - name: Install icon
         run: npm run build:runtime
@@ -105,3 +106,13 @@ jobs:
         with:
           files: artifacts/**
           generate_release_notes: true
+          # 固定前缀：支持版本声明（${release_body} = 自动生成的变更内容）。
+          # 此段必须保留——旧 dsh 用户据此前往下载旧版桌面壳。
+          body_template: |
+            ## dsh 版本支持
+
+            本版本桌面壳支持 **dsh ≥ 0.1.2-rc.1**。使用更旧 dsh 版本（0.1.0/0.1.1、各 alpha）的用户请前往 [Releases](https://github.com/HaoyueQin/deepseek-harness-desktop/releases) 页面下载**旧版本桌面壳**。
+
+            ---
+
+            ${release_body}

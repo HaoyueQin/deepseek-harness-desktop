@@ -1,7 +1,7 @@
 /**
  * 桌面集成插件 client.js 冒烟：mock 浏览器环境执行 factory 与 apply，
- * 断言 dsh 客户端插件契约的关键不变量（注册 id/order、降级路径不抛错、
- * legacy 宽度手柄的挂载/幂等/版本门控清理）。
+ * 断言 dsh 客户端插件契约的关键不变量（注册 id/order、无桥降级路径不抛错、
+ * 壳不注入任何宽度实现）。
  * 以后手写改动 client.js 后跑一遍防低级回归。
  * 用法：node scripts/client-plugin.test.mjs
  */
@@ -42,8 +42,8 @@ function makeFakeHandle() {
     releasePointerCapture: () => {},
     hasPointerCapture: () => false,
     getBoundingClientRect: () => ({ top: 0, width: 40 }),
-    remove() { /* 由测试容器在 uninstall 断言时模拟移除 */ handle.removed = true },
-    matches: (sel) => sel === "[data-dsh-legacy-handle]" && attrs["data-dsh-legacy-handle"] !== undefined,
+    remove() { handle.removed = true },
+    matches: () => false, // 通用 mock：不匹配任何真实选择器
   }
   return handle
 }
@@ -126,7 +126,7 @@ const reactStub = {
 
 // 用例一：新版后端（有桥）——工厂执行不抛错，apply 注册 settings.section order 30
 {
-  const env = installBrowserMock({ dshVersion: '0.1.2-alpha.1' })
+  const env = installBrowserMock({ dshVersion: '0.1.2-rc.1' })
   const def = await loadPlugin()
   const plugin = def.factory((name) => (name === 'react' ? reactStub : undefined))
   assert.equal(typeof plugin.apply, 'function')
@@ -138,49 +138,15 @@ const reactStub = {
   assert.equal(regOpts.id, 'desktop')
   assert.equal(regOpts.order, 30, 'order 必须是 30（与上游 agent-presets 的 20 错开）')
   assert.equal(typeof regComp, 'function')
-  await new Promise((r) => setImmediate(r)) // 刷 getInfo 微任务（新版路径不注入手柄）
-  assert.equal(env.fakeRoot.children.length, 0, 'alpha.1 后端不得注入 legacy 手柄')
-  uninstallBrowserMock()
-}
-
-// 用例二：旧版后端——factory 早绘（版本缓存）注入样式并挂双侧手柄
-{
-  const env = installBrowserMock({
-    dshVersion: '0.1.1-rc.2',
-    storage: { 'dsh-desktop-backend-version': '0.1.1-rc.2' },
-  })
-  const def = await loadPlugin()
-  def.factory((name) => (name === 'react' ? reactStub : undefined))
-  assert.equal(env.styleTags.some((t) => String(t.textContent).includes("data-dsh-legacy-handle")), true, '必须注入 legacy 宽度样式')
-  assert.equal(env.fakeRoot.children.length, 2, '双侧手柄各一')
-  assert.equal(env.fakeRoot.children[0].attrs['data-side'], 'left')
-  assert.equal(env.fakeRoot.children[1].attrs['data-side'], 'right')
-  // 无偏好：发布列宽变量（clamp 依赖），不设 user-width（走自适应）
-  assert.equal(env.fakeRoot.styles['--dsh-conversation-column-width'], '1000px')
-  assert.equal(env.fakeRoot.styles['--dsh-chat-user-width'], undefined)
-  // 幂等：重复扫描不重复挂
-  def.factory((name) => (name === 'react' ? reactStub : undefined))
-  assert.equal(env.fakeRoot.children.length, 2, '重复 install 不得叠加手柄')
-  uninstallBrowserMock()
-}
-
-// 用例二 b：旧版 + 已存偏好（超上限）——显示值 clamp 进 [640, 列宽-176]
-{
-  const env = installBrowserMock({
-    dshVersion: '0.1.1-rc.2',
-    storage: { 'dsh-desktop-backend-version': '0.1.1-rc.2', 'dsh.conversation.contentWidth': '2000' },
-  })
-  const def = await loadPlugin()
-  def.factory((name) => (name === 'react' ? reactStub : undefined))
-  // 偏好 2000 超出上限（1000-176=824）：显示 clamp 为 824；存储保持原始值待窗口拉宽恢复
-  assert.equal(env.fakeRoot.styles['--dsh-chat-user-width'], '824px')
-  assert.equal(env.storage['dsh.conversation.contentWidth'], '2000')
+  await new Promise((r) => setImmediate(r)) // 刷 getInfo 微任务
+  assert.equal(env.fakeRoot.children.length, 0, '受支持版本不得注入任何宽度实现')
+  assert.equal(env.styleTags.length, 0, '受支持版本不得注入任何样式')
   uninstallBrowserMock()
 }
 
 // 用例三：裸 dsh（无桥）——apply 直接返回，不注册不注入
 {
-  installBrowserMock({ dshVersion: '0.1.1-rc.2', hasBridge: false })
+  installBrowserMock({ dshVersion: '0.1.2-rc.1', hasBridge: false })
   const def = await loadPlugin()
   const plugin = def.factory(() => ({}))
   let called = false
@@ -189,4 +155,4 @@ const reactStub = {
   uninstallBrowserMock()
 }
 
-console.log('client-plugin OK: 插件契约冒烟通过（注册 id/order、降级、legacy 手柄挂载/幂等/新版不注入）')
+console.log('client-plugin OK: 插件契约冒烟通过（注册 id/order、无桥降级、不注入任何宽度实现）')

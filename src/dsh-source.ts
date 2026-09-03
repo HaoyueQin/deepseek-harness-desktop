@@ -2,10 +2,10 @@
  * Git 源码后端来源：目录校验、版本读取、spawn 参数构造。
  *
  * 源码启动是通用能力，不绑定任何特定版本：spawn 形态
- * `node --import tsx/esm apps/cli/src/bin.ts web …`（cwd=仓库根）已实证
- * 对 dsh-v0.1.0-rc.8 ～ dsh-v0.1.2-alpha.5 逐字一致（根 package.json 的
- * "dsh" script、tsx devDep、入口路径四 tag 相同）；一切版本差异（URL token、
- * --no-open）由调用方按 readSourceVersion 的版本号门控，与本模块无关。
+ * `node --import tsx/esm apps/cli/src/bin.ts web …`（cwd=仓库根）已验证
+ * 对 dsh-v0.1.0-rc.8 ～ dsh-v0.1.2-rc.1 逐字一致（根 package.json 的
+ * "dsh" script、tsx devDep、入口路径各 tag 相同）；本项目支持版本为
+ * dsh ≥0.1.2（rc.1 与 alpha.5 同代码），详见 README 支持版本说明。
  *
  * 启动硬前提（阻断项，缺一不可）：
  * 1. apps/cli/package.json 可读（取版本号）

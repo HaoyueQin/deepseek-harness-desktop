@@ -5,7 +5,7 @@
  * 端口：默认固定 3080（与 dsh web 默认一致，页面 origin 稳定，浏览器
  * localStorage 侧的设置跨重启保留），被占用时由调用方降级 --port 0。
  * 无论固定或随机，实际地址都从 stdout 行 "dsh web: http://127.0.0.1:<port>[…]"
- * 解析（alpha.1+ 带 /?token=，0.1.2 起需整串使用以完成 cookie 换取）——
+ * 解析（支持的 dsh ≥0.1.2 均带 /?token=，需整串使用以完成 cookie 换取）——
  * 这是 dsh 官方给 supervisor 的通道（源码注释：
  * "The URL line is a readiness signal: supervisors RPC as soon as they observe it"）。
  */
@@ -48,11 +48,6 @@ export interface StartDshOptions {
   /** 从 spawn 到 HTTP ready 的总超时。首启 profile 初始化较慢，默认 60s。 */
   readyTimeoutMs?: number
   /**
-   * 传 --no-open 关闭 dsh ≥0.1.0-rc.8 的默认浏览器行为。
-   * 低版本不认识该 flag 会启动报错，调用方须按版本判断后决定。
-   */
-  noOpen?: boolean
-  /**
    * 固定监听端口；缺省 0（OS 随机分配）。实际地址一律从 stdout URL 行
    * 解析，固定/随机对端口发现逻辑无差别。EADDRINUSE 会让 dsh 直接退出
    * （上游行为，不自动换端口），固定端口须由调用方先探测空闲。
@@ -70,7 +65,7 @@ export interface DshControl {
 }
 
 export function startDsh(options: StartDshOptions): DshControl {
-  const { nodePath, dshBin, dshHome, nodeArgs = [], cwd, onLog, readyTimeoutMs = 60_000, noOpen = false, port = 0 } = options
+  const { nodePath, dshBin, dshHome, nodeArgs = [], cwd, onLog, readyTimeoutMs = 60_000, port = 0 } = options
 
   // 桌面集成插件 patch（存在则挂载设置页「桌面」分区）。
   // 顺序关键：--patch 是 web 子命令的 option（commander 拒绝它出现在 'web'
@@ -79,10 +74,10 @@ export function startDsh(options: StartDshOptions): DshControl {
   const patchFile = desktopPatchPath()
   if (existsSync(patchFile)) patchArgs.push('--patch', patchFile)
 
-  // --no-open（dsh 0.1.0-rc.8+ 的 web 透传 flag）：dsh web 默认会用系统
-  // 浏览器打开就绪地址，桌面端自带窗口，必须关掉，否则每次启动都多弹
-  // 一个浏览器标签。放透传区（--port 之后），不影响 stdout URL 就绪行。
-  const child = spawn(nodePath, [...nodeArgs, dshBin, 'web', ...patchArgs, '--port', String(port), ...(noOpen ? ['--no-open'] : [])], {
+  // --no-open（dsh ≥0.1.0-rc.8 的 web 透传 flag，支持版本恒满足）：dsh web
+  // 默认会用系统浏览器打开就绪地址，桌面端自带窗口，必须关掉，否则每次
+  // 启动都多弹一个浏览器标签。放透传区（--port 之后），不影响 stdout URL 就绪行。
+  const child = spawn(nodePath, [...nodeArgs, dshBin, 'web', ...patchArgs, '--port', String(port), '--no-open'], {
     cwd,
     env: { ...process.env, DSH_HOME: dshHome },
     stdio: ['ignore', 'pipe', 'pipe'],

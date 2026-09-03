@@ -45,7 +45,7 @@ A desktop shell for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-h
 - **Single instance** — launching again focuses the existing window
 - **Full plugin freedom** — dynamic plugins (`cordis_define`/`cordis_run`), `$DSH_HOME/cordis.patch.yml`, and the npm plugin ecosystem all work exactly as in the web edition
 - **Desktop settings section** — the app's Settings page gains a "Desktop" tab (styled to match the harness UI): backend source card (mode, directory validation, clone/prepare, proxy), dsh version card (source-aware check & update with live logs), shell self-update check, auto-start toggle, launch-minimized toggle, port policy, About card
-- **Conversation width, natively** — on dsh ≥ 0.1.2-alpha.1 the shell stays out of the way and the upstream drag handles do the job; on older backends the shell replicates the same handles (same range, same persistence key), so upgrades hand your preference over seamlessly
+- **Conversation width, natively** — the upstream drag handles do the job on supported dsh versions; the shell injects nothing
 - **Shell self-update (two-step)** — checks silently 15s after launch (detection only, never auto-downloads): a "Download update" button appears in Settings, switching to "Install update" once downloaded — every step is triggered by you. Windows installs by quitting and running the installer (unsigned builds can't install silently); Linux AppImage replaces itself automatically; macOS excluded (needs signing)
 
 ## Screenshots
@@ -55,6 +55,19 @@ A desktop shell for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-h
 | General desktop options | Backend source, proxy and updates |
 | --- | --- |
 | ![Settings — general desktop options](./assets/screenshots/settings-desktop-1.png) | ![Settings — backend source, proxy and updates](./assets/screenshots/settings-desktop-2.png) |
+
+
+## dsh version support
+
+| dsh version | use |
+| --- | --- |
+| **≥ 0.1.2-rc.1** | this shell release |
+| anything older (0.1.0/0.1.1, any alpha) | an **older shell release** — download it from the [Releases](https://github.com/HaoyueQin/deepseek-harness-desktop/releases) page |
+
+This shell no longer adapts to dsh versions before 0.1.2-rc.1. Check your backend with
+`dsh --version`; if it is too old, either update dsh (`npm i -g @deepseek-ai/dsh@next`
+— 0.1.2-rc.1 currently ships on the `next` npm channel — or press "Check for updates" in
+Settings → Desktop from a supported shell) **or** download the matching older shell release.
 
 ## Install
 
@@ -148,7 +161,7 @@ assets/
 
 ## Known limitations (v1.x)
 
-- Requires Node.js ≥ 22; the npm channel needs a globally-installed `dsh` CLI (the setup page offers one-click install), the source channel needs `git` + `pnpm` — the shell bundles no runtime either way, so the installer stays small
+- Requires Node.js ≥ 22 and **dsh ≥ 0.1.2-rc.1**; the npm channel needs a globally-installed `dsh` CLI (the setup page offers one-click install), the source channel needs `git` + `pnpm` — the shell bundles no runtime either way, so the installer stays small. Older dsh versions need an older shell release (see the dsh version support table above)
 - macOS builds are unsigned — Gatekeeper requires right-click → Open on first run; macOS has no auto-update (needs a signing certificate)
 - Windows auto-update is guided (downloads then runs the installer) rather than silent, due to the unsigned build
 - The source channel checks out release tags in detached HEAD — switch your branch back manually if you develop in the same clone

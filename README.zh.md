@@ -45,7 +45,7 @@
 - **单实例** — 重复启动会聚焦已有窗口
 - **插件自由不受限** — 动态插件（`cordis_define`/`cordis_run`）、`$DSH_HOME/cordis.patch.yml`、npm 插件生态均与 Web 版完全一致
 - **设置页桌面分区** — 设置页新增「桌面」标签页（UI 契合 harness 设计）：后端来源卡片（来源模式、目录校验、克隆/准备环境、网络代理）、dsh 版本卡片（按来源区分的检查与更新，附实时日志）、桌壳自身更新检查、开机自启开关、启动最小化开关、端口策略、关于卡片
-- **会话区域宽度，原生体验** — dsh ≥ 0.1.2-alpha.1 时壳完全让位给上游原生的拖拽手柄；旧版后端由壳复刻同款手柄（同范围、同持久化 key），升级时偏好无缝延续
+- **会话区域宽度，原生体验** — 支持的 dsh 版本上完全由上游原生拖拽手柄接管，壳不注入任何实现
 - **桌壳自更新（两段式）** — 启动 15 秒后静默检查（只发现新版本，绝不自动下载）：设置页出现「下载更新」按钮，下载完成变「安装更新」，每一步都由你显式触发；Windows 安装即退出并运行安装包（未签名无法静默安装），Linux AppImage 自动替换；macOS 暂不支持（需签名）
 
 ## 界面预览
@@ -55,6 +55,17 @@
 | 桌面通用选项 | 后端来源、代理与更新 |
 | --- | --- |
 | ![设置 — 桌面通用选项](./assets/screenshots/settings-desktop-1.png) | ![设置 — 后端来源、代理与更新](./assets/screenshots/settings-desktop-2.png) |
+
+## dsh 版本支持
+
+| dsh 版本 | 使用 |
+| --- | --- |
+| **≥ 0.1.2-rc.1** | 本版本桌面壳 |
+| 更旧的任意版本（0.1.0/0.1.1、各 alpha） | 下载**旧版本桌面壳**——见 [Releases](https://github.com/HaoyueQin/deepseek-harness-desktop/releases) 页面 |
+
+本桌面壳不再适配 0.1.2-rc.1 之前的 dsh 版本。用 `dsh --version` 自查后端版本；
+若过旧，可升级 dsh（`npm i -g @deepseek-ai/dsh@next`——当前 0.1.2-rc.1 发布在 npm `next` 渠道；
+或在支持的桌面壳上通过设置页「检查更新」升级），**或**下载匹配的旧版桌面壳。
 
 ## 安装
 
@@ -132,7 +143,7 @@ src/
   settings.ts           壳设置（userData/settings.json — 后端来源、源码目录、代理、端口策略）
   updater.ts            electron-updater（Windows 引导 / Linux AppImage 全自动）
   dsh/spawn.ts          spawn dsh web --port <策略端口> --patch，解析 stdout URL 行，优雅停止
-  dsh/ready.ts          HTTP 就绪探测（任意状态——0.1.2-alpha.1 起 URL 可能带进程 token）
+  dsh/ready.ts          HTTP 就绪探测（任意状态——支持的 dsh 的 URL 带进程 token）
   tray.ts               托盘菜单（打开 / 开机自启 / 退出）+ 自启勾选同步
   autostart.ts          开机自启（win/mac 原生 + linux XDG 文件）
   preload.ts            contextBridge 桥（窗口控制 + 桌面 IPC；编译为 CJS）
@@ -148,7 +159,7 @@ assets/
 
 ## 已知限制（v1.x）
 
-- 需要 Node.js ≥ 22；npm 渠道需全局安装 dsh CLI（引导页提供一键安装），源码渠道需 `git` + `pnpm`——两种方式壳都不内置运行时，安装包保持小巧
+- 需要 Node.js ≥ 22 与 **dsh ≥ 0.1.2-rc.1**；npm 渠道需全局安装 dsh CLI（引导页提供一键安装），源码渠道需 `git` + `pnpm`——两种方式壳都不内置运行时，安装包保持小巧。更旧的 dsh 版本需要旧版桌面壳（见上方 dsh 版本支持表）
 - macOS 构建未签名 — Gatekeeper 首次运行需右键 → 打开；macOS 暂不支持自动更新（需签名证书）
 - Windows 自动更新为引导模式（下载后运行安装包）而非静默安装，源于未签名构建
 - 源码渠道以 detached HEAD 检出发布 tag——如果你在同一克隆里做开发，更新后需手动切回工作分支

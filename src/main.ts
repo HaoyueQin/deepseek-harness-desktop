@@ -29,7 +29,7 @@ import {
   checkSourceUpdate, initSourceUpdater, isSourceUpdating, onSourceUpdateStatus,
   setSourceLogSink, setSourceUpdateHooks, updateSource,
 } from './dsh-source-updater.js'
-import { locateDsh, compareVersions, type LocatedDsh } from './dsh-locator.js'
+import { locateDsh, type LocatedDsh } from './dsh-locator.js'
 import { locateSourceDsh, validateSourceDir, OFFICIAL_REPO_URL } from './dsh-source.js'
 // electron-updater 的 update-downloaded 事件带 downloadedFile（本地完整路径），
 // UpdateInfo.path 只是 latest.yml 里的相对文件名，spawn 会 ENOENT。
@@ -470,7 +470,7 @@ function showWindow(): void {
  * 单次 spawn 尝试。「意外退出」弹窗只在服务就绪后的崩溃时触发；启动期
  * 失败（dsh.url reject，如端口被抢注的 EADDRINUSE）交还调用方重试。
  */
-function spawnDshAttempt(located: LocatedDsh, noOpen: boolean, port: number | undefined): DshControl {
+function spawnDshAttempt(located: LocatedDsh, port: number | undefined): DshControl {
   dsh = startDsh({
     nodePath: 'node',
     dshBin: located.binJs,
@@ -478,7 +478,6 @@ function spawnDshAttempt(located: LocatedDsh, noOpen: boolean, port: number | un
     cwd: located.cwd,
     dshHome: dshHomeDir(),
     onLog: log,
-    noOpen,
     port,
   })
   let ready = false
@@ -498,10 +497,8 @@ function spawnDshAttempt(located: LocatedDsh, noOpen: boolean, port: number | un
 }
 
 async function startDshAndLoad(located: LocatedDsh): Promise<void> {
-  // --no-open 仅 dsh ≥0.1.0-rc.8 认识；低版本省略（退化为可能弹一次浏览器）
-  const noOpen = compareVersions(located.version, '0.1.0-rc.8') >= 0
   const srcDesc = located.source === 'git-local' ? ` source-dir=${located.cwd}` : ''
-  log(`spawn dsh: source=${located.source} node=node bin=${located.binJs}${srcDesc} version=${located.version} noOpen=${noOpen} DSH_HOME=${dshHomeDir()}`)
+  log(`spawn dsh: source=${located.source} node=node bin=${located.binJs}${srcDesc} version=${located.version} DSH_HOME=${dshHomeDir()}`)
   // 端口策略：固定端口空闲则用（origin 稳定，localStorage 侧设置跨重启保留）；
   // 被占/策略为随机则 --port 0 降级，避免 dsh EADDRINUSE 硬失败退出。
   const policy = getPortPolicy()
@@ -513,7 +510,7 @@ async function startDshAndLoad(located: LocatedDsh): Promise<void> {
   }
   ensureDesktopPlugin(dshHomeDir())
 
-  let attempt = spawnDshAttempt(located, noOpen, port)
+  let attempt = spawnDshAttempt(located, port)
   let url: string
   try {
     url = await attempt.url
@@ -526,7 +523,7 @@ async function startDshAndLoad(located: LocatedDsh): Promise<void> {
     log(`固定端口 ${port} 启动失败（${String(err)}），降级随机端口重试`)
     dshPortDegraded = true
     await attempt.stop()
-    attempt = spawnDshAttempt(located, noOpen, undefined)
+    attempt = spawnDshAttempt(located, undefined)
     url = await attempt.url
   }
   log(`dsh 就绪: ${url}${dshPortDegraded ? '（降级随机）' : ''}`)
