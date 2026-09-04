@@ -34,7 +34,7 @@ A desktop shell for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-h
 - **Source-mode updates like npm's** — check the upstream tags, see "current → latest", then one click checks out the tag, reinstalls, rebuilds and restarts the backend. Dirty worktrees are refused with a clear message
 - **One proxy for every update channel** — a single proxy setting covers git (clone/fetch), pnpm (install/build) and npm (check/upgrade); git uses per-invocation config, never touching your global gitconfig
 - **First-run setup page** — no dsh detected? The app offers a copyable install command, a one-click in-app install, or the source-mode path (clone + prepare), then boots automatically
-- **Recovery Center as the single entry** — Settings → Desktop opens the native Recovery Center: version listing & one-click switching (npm and git sources), plugin rescue (disable/uninstall/update) and crash diagnosis in one page; the shell also switches there automatically when dsh fails to boot or exits unexpectedly
+- **Version check stays on Desktop, update lands in Recovery Center** — Settings → Desktop checks for newer dsh (npm or git source); confirming the update hands off to the native Recovery Center with live progress, and the backend restarts automatically when done
 
 ### Desktop experience
 
@@ -44,7 +44,7 @@ A desktop shell for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-h
 - **Configurable port policy** — fixed `3080` by default (same as `dsh web`, giving a stable page origin so browser-side preferences survive restarts), switchable to a custom port or random in Settings; falls back to a random port with a notice when the fixed port is taken. Note: while the shell lives in the tray it holds the port — run `dsh web --port <other>` in a terminal to coexist
 - **Single instance** — launching again focuses the existing window
 - **Full plugin freedom** — dynamic plugins (`cordis_define`/`cordis_run`), `$DSH_HOME/cordis.patch.yml`, and the npm plugin ecosystem all work exactly as in the web edition
-- **Desktop settings section** — the app's Settings page gains a "Desktop" tab (styled to match the harness UI): backend source card (mode, directory validation, clone/prepare, proxy), Recovery Center entry card (opens the native recovery page: version switching, plugin rescue, crash diagnosis), shell self-update check, auto-start toggle, launch-minimized toggle, port policy, About card
+- **Desktop settings section** — the app's Settings page gains a "Desktop" tab (styled to match the harness UI): backend source card (mode, directory validation, clone/prepare, proxy), dsh version card (source-aware check; confirming an update hands off to the Recovery Center with live progress), shell self-update check, auto-start toggle, launch-minimized toggle, port policy, About card
 - **Conversation width, natively** — the upstream drag handles do the job on supported dsh versions; the shell injects nothing
 - **Shell self-update (two-step)** — checks silently 15s after launch (detection only, never auto-downloads): a "Download update" button appears in Settings, switching to "Install update" once downloaded — every step is triggered by you. Windows installs by quitting and running the installer (unsigned builds can't install silently); Linux AppImage replaces itself automatically; macOS excluded (needs signing)
 
