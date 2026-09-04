@@ -41,6 +41,25 @@ import { OutputRingBuffer } from '../dist/recovery/ring-buffer.js'
   assert.ok(text.includes('-10\n'), '最新行必须保留')
 }
 
+// 字节上限按真实 UTF-8 字节计（中文每字 3 字节）
+{
+  const b = new OutputRingBuffer(200, 30)
+  b.push('中中中中中\n') // 15 UTF-8 字节
+  b.push('x'.repeat(20) + '\n') // 20 字节 → 合计 35 > 30，中文行按字节淘汰
+  const text = b.text()
+  assert.ok(!text.includes('中中中中中'), '中文行应按 UTF-8 字节淘汰而非字符数')
+  assert.ok(text.includes('xxxxx'), '最新行必须保留')
+}
+
+// 无换行洪流（\r 进度条）时 pending 截断保留尾部，不无界增长
+{
+  const b = new OutputRingBuffer(200, 100)
+  b.push('a'.repeat(1000)) // 无换行
+  const text = b.text()
+  assert.ok(text.length <= 100, 'pending 应被截断到上限附近')
+  assert.ok(text.endsWith('a'), '截断保留尾部')
+}
+
 // 单行超限也至少保留一行
 {
   const b = new OutputRingBuffer(5, 10)

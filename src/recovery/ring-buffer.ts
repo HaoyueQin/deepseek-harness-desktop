@@ -4,6 +4,8 @@
  * main.log）。行数上限与字节上限先到为准，均触发最旧行淘汰；未以换行
  * 结尾的尾行保留（pending），与下一个 chunk 拼接。
  */
+import { Buffer } from 'node:buffer'
+
 export class OutputRingBuffer {
   private readonly maxLines: number
   private readonly maxBytes: number
@@ -22,6 +24,11 @@ export class OutputRingBuffer {
     const parts = this.pending.split('\n')
     this.pending = parts.pop() ?? ''
     for (const line of parts) this.append(line + '\n')
+    // 无换行洪流（如 \r 进度条刷屏）会让 pending 无界增长：超限截断保留尾部
+    //（按 code unit 近似上限，防失控即可；真实行进入 done 后按 UTF-8 字节计）。
+    if (this.pending.length > this.maxBytes) {
+      this.pending = this.pending.slice(-this.maxBytes)
+    }
   }
 
   /** 当前保留的全部内容（含未完结尾行）。 */
@@ -31,10 +38,11 @@ export class OutputRingBuffer {
 
   private append(line: string): void {
     this.done.push(line)
-    this.bytes += line.length
+    // 上限语义是字节：按真实 UTF-8 字节数计（中文等非 ASCII 每字 3 字节）
+    this.bytes += Buffer.byteLength(line, 'utf8')
     // 至少保留一行（单行超限时不淘汰到空）
     while (this.done.length > 1 && (this.done.length > this.maxLines || this.bytes > this.maxBytes)) {
-      this.bytes -= this.done[0]!.length
+      this.bytes -= Buffer.byteLength(this.done[0]!, 'utf8')
       this.done.shift()
     }
   }

@@ -210,13 +210,26 @@
   $('btnRestart').onclick = async () => {
     $('btnRestart').disabled = true
     $('btnRestart').textContent = '正在重启 dsh…'
-    const r = await bridge.recovery.exitRestart()
-    if (r.ok !== true) {
-      // 重启失败：主进程已重写为 boot-failed 上下文，留在本页刷新
+    const reset = () => {
       $('btnRestart').disabled = false
       $('btnRestart').textContent = '重启 dsh 并返回'
-      await render()
-      alert('重启失败：' + (r.error ?? '未知原因'))
+    }
+    try {
+      const r = await bridge.recovery.exitRestart()
+      if (r.busy === true) {
+        reset()
+        alert('已有维护操作进行中，完成后再点本按钮。')
+        return
+      }
+      if (r.ok !== true) {
+        // 重启失败：主进程已重写为 boot-failed 上下文，留在本页刷新
+        reset()
+        await render()
+        alert('重启失败：' + (r.error ?? '未知原因'))
+      }
+    } catch (e) {
+      reset()
+      alert('重启请求失败：' + String(e))
     }
     // 成功时主进程已切回 dsh 页面，本页随之销毁
   }
@@ -324,7 +337,8 @@
   function pushVersionLog(t) {
     const log = $('version-log')
     log.style.display = 'block'
-    log.textContent += t
+    // 截断保留尾部 200KB：分钟级构建的输出不撑爆 DOM（textContent += 为 O(n²)）
+    log.textContent = (log.textContent + t).slice(-200000)
     log.scrollTop = log.scrollHeight
   }
 
@@ -347,6 +361,11 @@
     try {
       const r = await bridge.backend.installVersion(v.version)
       if (r.ok === true) return // 主进程将自动重启后端并 loadURL 回 dsh 页
+      if (r.busy === true) {
+        pushVersionLog('[shell] 已有维护操作进行中，请稍候再试\n')
+        alert('已有维护操作进行中，请稍候再试。')
+        return
+      }
       pushVersionLog('[shell] ✗ 切换失败: ' + (r.error !== undefined && r.error !== null ? r.error : '未知原因') + '\n')
       alert('切换失败：' + (r.error !== undefined && r.error !== null ? r.error : '未知原因'))
     } catch (e) {
@@ -382,7 +401,8 @@
     }
     if (p.disabled) mkBtn('启用', (b) => togglePlugin(p, b, true))
     else if (!p.system && !p.official && !p.protected) mkBtn('禁用', (b) => togglePlugin(p, b, false))
-    if (!p.system && !p.official) {
+    // 卸载/更新同样避开系统组件/官方内置/受保护模块——救火不能拆宿主
+    if (!p.system && !p.official && !p.protected) {
       mkBtn('卸载', (b) => cliPlugin(p, b, 'remove'))
       mkBtn('更新', (b) => cliPlugin(p, b, 'update'))
     }
@@ -437,6 +457,11 @@
     try {
       const r = await bridge.plugins[action](p.name)
       if (r.ok === true) return // 主进程完成时已重启后端并切回 dsh 页
+      if (r.busy === true) {
+        pushVersionLog('[shell] 已有维护操作进行中，请稍候再试\n')
+        alert('已有维护操作进行中，请稍候再试。')
+        return
+      }
       pushVersionLog('[shell] ✗ ' + label + '失败: ' + (r.error ?? '未知原因') + '\n')
       alert(label + '失败：' + (r.error ?? '未知原因'))
     } catch (e) {
