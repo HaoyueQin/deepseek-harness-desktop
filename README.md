@@ -56,6 +56,8 @@ A desktop shell for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-h
 | --- | --- |
 | ![Settings — general desktop options](./assets/screenshots/settings-desktop-1.png) | ![Settings — backend source, proxy and updates](./assets/screenshots/settings-desktop-2.png) |
 
+![Recovery Center — version switching, plugin rescue and crash diagnosis in one page](./assets/screenshots/recovery-mode.png)
+
 
 ## dsh version support
 

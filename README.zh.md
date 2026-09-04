@@ -56,6 +56,8 @@
 | --- | --- |
 | ![设置 — 桌面通用选项](./assets/screenshots/settings-desktop-1.png) | ![设置 — 后端来源、代理与更新](./assets/screenshots/settings-desktop-2.png) |
 
+![恢复中心 — 版本切换、插件救火与崩溃诊断集中一页](./assets/screenshots/recovery-mode.png)
+
 ## dsh 版本支持
 
 | dsh 版本 | 使用 |

@@ -3,8 +3,9 @@
  *
  * 源码启动是通用能力，不绑定任何特定版本：spawn 形态
  * `node --import tsx/esm apps/cli/src/bin.ts web …`（cwd=仓库根）已验证
- * 对 dsh-v0.1.0-rc.8 ～ dsh-v0.1.2-rc.1 逐字一致（根 package.json 的
- * "dsh" script、tsx devDep、入口路径各 tag 相同）；本项目支持版本为
+ * 对 dsh-v0.1.0-rc.8 ～ dsh-v0.1.3-alpha.1 逐字一致（根 package.json 的
+ * "dsh" script、tsx devDep、入口路径各 tag 相同；0.1.3 起新增的 fs-ext
+ * 硬依赖由下方版本门控单独校验）；本项目支持版本为
  * dsh ≥0.1.2，详见 README 支持版本说明。
  *
  * 启动硬前提（阻断项，缺一不可）：
