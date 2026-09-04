@@ -1,7 +1,7 @@
 /**
  * dsh web 子进程生命周期：spawn、stdout URL 行解析、HTTP 就绪探测、
- * 优雅停止（kill → 超时强杀兜底）、输出快照（stdout+stderr 合并滚动保留
- * 尾部 16KB，供启动失败弹窗展示真实死因；消费侧脱敏 token）。
+ * 优雅停止（kill → 超时强杀兜底）、输出快照（stdout+stderr 合并进环形
+ * 缓冲，200 行/32KB 上限，供启动失败与崩溃诊断；消费侧脱敏 token）。
  *
  * 端口：默认固定 3080（与 dsh web 默认一致，页面 origin 稳定，浏览器
  * localStorage 侧的设置跨重启保留），被占用时由调用方降级 --port 0。
@@ -16,6 +16,7 @@ import { existsSync } from 'node:fs'
 import { createConnection } from 'node:net'
 import { waitForHttp } from './ready.js'
 import { UrlLineMatcher } from './url-line.js'
+import { OutputRingBuffer } from '../recovery/ring-buffer.js'
 import { desktopPatchPath } from '../paths.js'
 
 /**
@@ -63,7 +64,7 @@ export interface DshControl {
   url: Promise<string>
   /** 停止 dsh：kill 后等待退出，超时强杀。 */
   stop: () => Promise<void>
-  /** 最近合并输出快照尾部（stdout+stderr 原文，含 token——消费侧须脱敏）。 */
+  /** 最近合并输出快照（stdout+stderr 原文，含 token——消费侧须脱敏）。 */
   recentOutput: () => string
 }
 
@@ -80,21 +81,15 @@ export function startDsh(options: StartDshOptions): DshControl {
   // --no-open（dsh ≥0.1.0-rc.8 的 web 透传 flag，支持版本恒满足）：dsh web
   // 默认会用系统浏览器打开就绪地址，桌面端自带窗口，必须关掉，否则每次
   // 启动都多弹一个浏览器标签。放透传区（--port 之后），不影响 stdout URL 就绪行。
+  // stdout+stderr 合并滚动快照：异常退出时作为诊断材料（消费侧脱敏 token）
+  const recent = new OutputRingBuffer()
+
   const child = spawn(nodePath, [...nodeArgs, dshBin, 'web', ...patchArgs, '--port', String(port), '--no-open'], {
     cwd,
     env: { ...process.env, DSH_HOME: dshHome },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   })
-
-  // 输出快照：stdout+stderr 合并滚动，只留尾部（启动失败时早先的日志
-  // 不可能再包含死因，死因必然在最新输出里）。
-  const RECENT_MAX = 16 * 1024
-  let recent = ''
-  const pushRecent = (text: string): void => {
-    recent += text
-    if (recent.length > RECENT_MAX) recent = recent.slice(-RECENT_MAX)
-  }
 
   let expectedStop = false
   let urlResolve!: (url: string) => void
@@ -109,7 +104,7 @@ export function startDsh(options: StartDshOptions): DshControl {
 
   const onStdout = (chunk: Buffer): void => {
     const text = chunk.toString()
-    pushRecent(text)
+    recent.push(text)
     onLog(text.trimEnd())
     if (settled || urlFound) return
     const found = urlLine.push(text)
@@ -131,7 +126,7 @@ export function startDsh(options: StartDshOptions): DshControl {
 
   child.stdout?.on('data', onStdout)
   child.stderr?.on('data', (chunk: Buffer) => {
-    pushRecent(chunk.toString())
+    recent.push(chunk.toString())
     onLog(chunk.toString().trimEnd())
   })
   child.on('error', (err) => {
@@ -175,5 +170,5 @@ export function startDsh(options: StartDshOptions): DshControl {
     })
   }
 
-  return { exited, url, stop, recentOutput: () => recent }
+  return { exited, url, stop, recentOutput: () => recent.text() }
 }

@@ -288,12 +288,20 @@ window.__ModuleLoader__.load({
 				desktop.update.install().then((r) => setUpdate((u) => ({ ...u, ...r }))).catch(() => {})
 			}
 
-			// 后端（npm 全局或 git 源码目录）版本检测与更新
+			// 桌壳更新状态实时推送（后台 15s 自动检查/手动检查/下载进度均经此到达）
+			React.useEffect(() => {
+				if (!desktop || !desktop.update) return
+				return desktop.update.onStatus((s) => setUpdate((prev) => ({ ...prev, ...s })))
+			}, [desktop])
+
+			// 后端（npm 全局或 git 源码目录）版本检测与更新。检查留在设置页；
+			// 确认更新后交接给恢复中心（壳切恢复页自动安装，purpose=update 不渲染
+			// 异常观感），完成后管线自动重启后端回 dsh 页。
 			const backend = desktop ? desktop.backend : undefined
 			const [backendStatus, setBackendStatus] = React.useState({
 				current: info ? info.dshVersion : "…", latest: null, stage: "idle", error: null,
 			})
-			// 源码更新管线（检出 tag → pnpm install → build）的实时日志
+			// 源码更新管线（检出 tag → pnpm install → build）的实时日志（就地降级时用）
 			const [backendLog, setBackendLog] = React.useState("")
 			React.useEffect(() => {
 				if (!desktop || !desktop.setup || !desktop.setup.onSourceOutput) return
@@ -308,11 +316,6 @@ window.__ModuleLoader__.load({
 				// onStatus 返回 unsubscribe：设置页 SPA 内反复切换时防止 ipcRenderer 监听器累积
 				return backend.onStatus((s) => setBackendStatus((prev) => ({ ...prev, ...s })))
 			}, [backend])
-			// 桌壳更新状态实时推送（后台 15s 自动检查/手动检查/下载进度均经此到达）
-			React.useEffect(() => {
-				if (!desktop || !desktop.update) return
-				return desktop.update.onStatus((s) => setUpdate((prev) => ({ ...prev, ...s })))
-			}, [desktop])
 			// info 到达后初始化后端版本显示（不再停留「…」）
 			React.useEffect(() => {
 				if (!info || !info.dshVersion) return
@@ -327,9 +330,19 @@ window.__ModuleLoader__.load({
 			const doBackendUpdate = () => {
 				if (!backend || !backendStatus.latest) return
 				const detail = backendIsGit
-					? "将从源码仓库检出该版本并重新构建（pnpm install + build，可能需要数分钟），完成后重启后端。"
-					: "更新需要重启后端。"
+					? "将在恢复中心自动检出该版本并重新构建（可能需要数分钟），完成后自动重启。"
+					: "桌面壳会打开恢复中心自动完成更新并重启后端。"
 				if (!window.confirm(`检测到${backendStatus.latestPrerelease ? "预发布" : ""}新版后端 ${backendStatus.latest}。${detail}确定更新？`)) return
+				if (desktop.recovery && desktop.recovery.openUpdate) {
+					// 新壳：交接给恢复中心（实时进度 + 完成自动重启回正常模式）
+					desktop.recovery.openUpdate(backendStatus.latest).then((r) => {
+						if (r && r.ok !== true) {
+							window.alert(r.busy === true ? "已有任务在运行，请稍候" : (r.error || "无法打开恢复中心"))
+						}
+					}).catch(() => {})
+					return
+				}
+				// 旧壳桥无交接通道（混合态防崩）：保留就地更新行为
 				setBackendStatus((s) => ({ ...s, stage: "updating", error: null }))
 				backend.update().then((r) => setBackendStatus((prev) => ({ ...prev, ...r }))).catch(() => {})
 			}
@@ -481,13 +494,14 @@ window.__ModuleLoader__.load({
 				// 后端来源（自动/npm 全局/源码目录 + 校验 + 代理），旧壳桥上整卡不渲染
 				React.createElement(BackendSourceCard, null),
 
-				// dsh 版本管理（纯壳架构：npm 全局或 git 源码目录，见「后端来源」卡片）
+				// dsh 版本管理（纯壳架构：npm 全局或 git 源码目录，见「后端来源」卡片）。
+				// 检查留在设置页；确认更新交接给恢复中心（见 doBackendUpdate）。
 				React.createElement("div", { style: rowStyle },
 					React.createElement("div", { style: { minWidth: 0, width: "100%" } },
 						React.createElement("div", { style: labelStyle }, "dsh 版本"),
 						React.createElement("div", { style: subStyle },
 							backendIsGit
-								? "在线核对官方仓库 tag，发现新版后检出并重新构建"
+								? "在线核对官方仓库 tag，发现新版后到恢复中心自动检出并重新构建"
 								: "管理 dsh 命令行工具的版本；桌面壳与终端共享同一份安装",
 						),
 						React.createElement("div", { style: subStyle },
@@ -521,7 +535,7 @@ window.__ModuleLoader__.load({
 							? React.createElement("button", {
 								style: btnStyle, onClick: doBackendUpdate,
 								disabled: backendStatus.stage === "updating" || backendStatus.stage === "done",
-							}, backendIsGit ? "下载更新" : "一键更新")
+							}, backendIsGit ? "更新" : "一键更新")
 							: null,
 					),
 				),
@@ -567,6 +581,27 @@ window.__ModuleLoader__.load({
 										}, "检查更新"),
 					),
 				),
+
+				// ===== 临时测试入口（验收后整块删除）=====
+				// 用途：无法人工制造异常场景/无新版可更新时，手动打开恢复中心看效果。
+				// 删除方法：搜索「临时测试入口」删除本块即可，无其他引用。
+				React.createElement("div", { style: { ...rowStyle, opacity: 0.75, borderStyle: "dashed" } },
+					React.createElement("div", {},
+						React.createElement("div", { style: labelStyle }, zh ? "恢复中心（临时测试入口）" : "Recovery Center (temporary test entry)"),
+						React.createElement("div", { style: subStyle },
+							zh
+								? "仅供验收：手动进入恢复中心的维护模式（版本切换/插件救火）。验收完成后此入口会删除。"
+								: "For acceptance only: opens the recovery center's maintenance mode (version switching / plugin rescue). Removed after acceptance.",
+						),
+						desktop.recovery && desktop.recovery.open
+							? React.createElement("button", {
+									style: { ...ghostBtn, marginTop: "8px" },
+									onClick: () => { desktop.recovery.open().catch(() => {}) },
+								}, zh ? "打开恢复中心" : "Open Recovery Center")
+							: null,
+					),
+				),
+				// ===== 临时测试入口结束 =====
 			)
 		}
 

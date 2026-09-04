@@ -9,7 +9,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell } from 'electron'
 import { startDsh, isTcpPortFree, type DshControl } from './dsh/spawn.js'
 import { createTray, syncTrayAutostart, type TrayHandlers } from './tray.js'
-import { dshHomeDir, iconPath, preloadPath, resourcesDir } from './paths.js'
+import { dshHomeDir, iconPath, preloadPath, recoveryPagePath, resourcesDir } from './paths.js'
 import {
   getLaunchMinimized, setLaunchMinimized, getPortPolicy, setPortPolicy,
   getBackendSource, setBackendSource, getSourceDir, setSourceDir,
@@ -22,21 +22,29 @@ import {
   downloadUpdate, installUpdate, setRunInstaller,
 } from './updater.js'
 import {
-  checkBackendUpdate, initBackendUpdater,
-  onBackendUpdateStatus, setBackendRestartHandler, updateBackend,
+  checkBackendUpdate, fetchNpmVersions, initBackendUpdater, installBackendVersion,
+  onBackendUpdateStatus, setBackendLogSink, setBackendRestartHandler, updateBackend,
 } from './dsh-updater.js'
 import {
-  checkSourceUpdate, initSourceUpdater, isSourceUpdating, onSourceUpdateStatus,
+  checkSourceUpdate, initSourceUpdater, installSourceVersion, isSourceUpdating,
+  listSourceVersions, onSourceUpdateStatus,
   setSourceLogSink, setSourceUpdateHooks, updateSource,
 } from './dsh-source-updater.js'
 import { locateDsh, type LocatedDsh } from './dsh-locator.js'
+import { listNpmVersions } from './dsh-versions.js'
 import { locateSourceDsh, validateSourceDir, OFFICIAL_REPO_URL } from './dsh-source.js'
+import { enterRecovery, getRecoveryContext, clearRecoveryContext } from './recovery/state.js'
+import { parseFailure, sanitizeLog } from './recovery/parse-failure.js'
+import { disablePlugin, enablePlugin, isImmutablePlugin, isValidPluginName, listPlugins, parseOutdatedJson, pluginCliArgs } from './recovery/plugins.js'
+import { parseThemePreference } from './recovery/theme.js'
+import { ipcSenderKind } from './recovery/ipc-guard.js'
 // electron-updater 的 update-downloaded 事件带 downloadedFile（本地完整路径），
 // UpdateInfo.path 只是 latest.yml 里的相对文件名，spawn 会 ENOENT。
 import type { UpdateDownloadedEvent } from 'electron-updater'
 import { join } from 'node:path'
-import { copyFileSync, existsSync, mkdirSync, readdirSync, renameSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync } from 'node:fs'
 import { spawn, type ChildProcess } from 'node:child_process'
+import { killTree } from './kill-tree.js'
 import { desktopPluginDir } from './paths.js'
 import { log } from './log.js'
 import { INJECT_TITLEBAR } from './titlebar.js'
@@ -44,6 +52,15 @@ import { INJECT_TITLEBAR } from './titlebar.js'
 let win: BrowserWindow | null = null
 let dsh: DshControl | null = null
 let quitting = false
+
+// dev 隔离（未打包时生效）：userData 与 DSH_HOME 各自独立——单实例锁与打包版
+// 互不影响（可同时运行），设置/日志/更新状态隔离，dsh 跑在专用 DSH_HOME，
+// 不触碰用户真实 profile。必须在 requestSingleInstanceLock 之前设置。
+if (!app.isPackaged) {
+  const devData = join(app.getPath('appData'), 'deepseek-harness-desktop-dev')
+  app.setPath('userData', devData)
+  process.env.DSH_HOME = join(devData, 'dsh-home')
+}
 /** 生效后端（npm 全局或 git 源码目录；纯壳架构：壳不内置运行时）。 */
 let locatedDsh: LocatedDsh | null = null
 /**
@@ -55,6 +72,47 @@ let backendNotice: string | null = null
 let dshPortActual: number | null = null
 /** 本次是否因配置的固定端口被占而降级随机（页面 localStorage 侧设置本次不保留）。 */
 let dshPortDegraded = false
+/** 版本切换（dsh-backend:install-version）进行中标志：与 sourceBusy/isSourceUpdating 互斥。 */
+let versionBusy = false
+/** 插件 CLI 操作（remove/update）进行中标志：与 sourceBusy/versionBusy 互斥。 */
+let pluginsBusy = false
+
+/**
+ * 组装恢复上下文：快照脱敏 + 解析诊断（handover §7.3 数据流）。
+ * rawOutput 调用方保证来自 dsh.recentOutput()（或错误串）。
+ */
+function buildRecoveryContext(
+  kind: 'crashed' | 'boot-failed' | 'maintenance',
+  code: number | null,
+  signal: string | null,
+  rawOutput: string,
+  purpose?: 'update',
+): void {
+  const outputTail = sanitizeLog(rawOutput)
+  enterRecovery({
+    kind, code, signal, outputTail,
+    diagnosis: parseFailure(outputTail),
+    dshVersion: readDshVersion(),
+    dshSource: locatedDsh?.source ?? null,
+    purpose,
+  })
+}
+
+/** 切到恢复页并确保窗口可见（可能正隐藏在托盘）。 */
+async function showRecoveryPage(): Promise<void> {
+  showWindow()
+  await win?.loadFile(recoveryPagePath())
+}
+
+type IpcEventLike = { senderFrame?: { url?: string } | null }
+/** 恢复面通道守卫：只允许壳原生恢复页（file://…/recovery.html）发起。 */
+function fromRecoveryPage(event: IpcEventLike): boolean {
+  return ipcSenderKind(event.senderFrame?.url) === 'recovery'
+}
+/** dsh 页面通道守卫：设置页更新交接（open-update）与手动入口（open）。 */
+function fromDshPage(event: IpcEventLike): boolean {
+  return ipcSenderKind(event.senderFrame?.url) === 'dsh-page'
+}
 
 /**
  * 用户 dsh 版本（locateDsh 检测结果）。未检测到返回 'unknown'。
@@ -189,6 +247,117 @@ function registerAppIpc(): void {
       return updateSource()
     }
     return updateBackend()
+  })
+  // 版本清单（恢复页版本区数据源）：按生效来源分发；失败返回 error 字段由页面重试
+  ipcMain.handle('dsh-backend:versions', async (event) => {
+    if (!fromRecoveryPage(event)) return { source: null, current: '', versions: [], error: 'forbidden' }
+    if (locatedDsh === null) return { source: null, current: '', versions: [] }
+    try {
+      if (locatedDsh.source === 'git-local') {
+        return { source: 'git-local', current: locatedDsh.version, versions: await listSourceVersions() }
+      }
+      const { versions, distTags } = await fetchNpmVersions()
+      return { source: 'npm-global', current: locatedDsh.version, versions: listNpmVersions(versions, distTags, locatedDsh.version) }
+    } catch (err) {
+      log(`dsh-backend:versions 失败 ${String(err)}`)
+      return { source: locatedDsh.source, current: locatedDsh.version, versions: [], error: String(err) }
+    }
+  })
+  // 切换任意版本（升级/回退统一）：安装成功自动重启后端并 loadURL 回 dsh 页
+  ipcMain.handle('dsh-backend:install-version', async (event, target: unknown) => {
+    if (!fromRecoveryPage(event)) return { ok: false, error: 'forbidden' }
+    if (typeof target !== 'string' || target === '') return { ok: false, error: 'invalid' }
+    if (versionBusy || pluginsBusy || sourceBusy || isSourceUpdating()) return { ok: false, busy: true }
+    versionBusy = true
+    try {
+      const s = locatedDsh?.source === 'git-local'
+        ? await installSourceVersion(target)
+        : await installBackendVersion(target)
+      return s.stage === 'done' ? { ok: true } : { ok: false, error: s.error ?? '切换失败' }
+    } finally {
+      versionBusy = false
+    }
+  })
+  // 插件救火区：清单/禁用/启用（纯文件，dsh 崩溃态可用）
+  ipcMain.handle('plugins:list', (event) =>
+    fromRecoveryPage(event) ? listPlugins(join(dshHomeDir(), 'profiles', 'web')) : { ok: false, error: 'forbidden' })
+  ipcMain.handle('plugins:disable', async (event, name: unknown) => {
+    if (!fromRecoveryPage(event)) return { ok: false, applied: [], disabledCount: 0, reason: 'forbidden' }
+    if (typeof name !== 'string' || !isValidPluginName(name)) return { ok: false, applied: [], disabledCount: 0, reason: 'invalid' }
+    return disablePlugin(join(dshHomeDir(), 'profiles', 'web'), name)
+  })
+  ipcMain.handle('plugins:enable', async (event, name: unknown) => {
+    if (!fromRecoveryPage(event)) return { ok: false, applied: [], disabledCount: 0, reason: 'forbidden' }
+    if (typeof name !== 'string' || !isValidPluginName(name)) return { ok: false, applied: [], disabledCount: 0, reason: 'invalid' }
+    return enablePlugin(join(dshHomeDir(), 'profiles', 'web'), name)
+  })
+  // 卸载/更新：dsh plugin CLI 编排——停后端防文件锁 → spawn → 重启
+  const runPluginCli = async (action: 'remove' | 'update', name: string): Promise<{ ok: boolean; busy?: boolean; error?: string }> => {
+    if (pluginsBusy || sourceBusy || versionBusy || isSourceUpdating()) return { ok: false, busy: true }
+    if (locatedDsh === null) return { ok: false, error: '后端未定位，无法执行插件操作' }
+    if (isImmutablePlugin(name)) return { ok: false, error: '系统组件/官方内置/受保护模块不允许卸载或更新' }
+    pluginsBusy = true
+    // 出口统一脱敏（与快照同标准）；token 恰跨 chunk 的极端漏网由异常退出快照的整体脱敏兜底
+    const push = (t: string): void => { if (!quitting) win?.webContents.send('recovery:log', sanitizeLog(t)) }
+    try {
+      push('\r\n[shell] 停止后端，准备执行 dsh plugin ' + action + ' ' + name + '…\r\n')
+      if (dsh !== null) { await dsh.stop(); dsh = null }
+      push('\r\n[shell] dsh plugin ' + action + ' ' + name + '…\r\n')
+      const child = spawn('node', [locatedDsh.binJs, ...(locatedDsh.nodeArgs ?? []), ...pluginCliArgs(action, name)], {
+        cwd: locatedDsh.cwd ?? undefined,
+        env: { ...process.env, ...networkProxyEnv() },
+        windowsHide: true,
+      })
+      let lastOut = ''
+      child.stdout?.on('data', (d: Buffer) => { const s = d.toString(); lastOut = s; push(s) })
+      child.stderr?.on('data', (d: Buffer) => { const s = d.toString(); lastOut = s; push(s) })
+      // spawn 失败（如 node 不在 PATH）只触发 error 不触发 exit：不监听会让
+      // Promise 永挂、pluginsBusy 永久占用；超时强杀兜底防管线卡死。
+      const code: number | null = await new Promise<number | null>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          killTree(child) // 树杀：dsh CLI 内部 spawnSync 的 pnpm 孙进程一并带走
+          reject(new Error('dsh plugin 超时（600s），已终止'))
+        }, 600_000)
+        child.on('exit', (c) => { clearTimeout(timer); resolve(c) })
+        child.on('error', (err: Error) => { clearTimeout(timer); reject(err) })
+      })
+      if (code !== 0) {
+        push('\r\n[shell] ✗ 插件操作失败（exit=' + String(code) + '）：' + lastOut.slice(-300) + '\r\n')
+        throw new Error('dsh plugin ' + action + ' 失败（exit ' + String(code) + '）')
+      }
+      push('\r\n[shell] ✓ 已完成，重启后端…\r\n')
+      await restartEffectiveBackend()
+      return { ok: true }
+    } catch (err) {
+      log('plugins:' + action + ' 失败 ' + String(err))
+      return { ok: false, error: String(err) }
+    } finally {
+      pluginsBusy = false
+    }
+  }
+  ipcMain.handle('plugins:remove', (event, name: unknown) =>
+    fromRecoveryPage(event) && typeof name === 'string' && isValidPluginName(name) ? runPluginCli('remove', name) : { ok: false, error: 'invalid' })
+  ipcMain.handle('plugins:update', (event, name: unknown) =>
+    fromRecoveryPage(event) && typeof name === 'string' && isValidPluginName(name) ? runPluginCli('update', name) : { ok: false, error: 'invalid' })
+  // 插件最新版本（pnpm outdated --json，只读不装、不停后端）：pnpm 缺失/网络失败/
+  // 超时都返回空表，页面降级为只显示当前版本
+  ipcMain.handle('plugins:outdated', async (event) => {
+    if (!fromRecoveryPage(event)) return {}
+    const profileDir = join(dshHomeDir(), 'profiles', 'web')
+    return new Promise<Record<string, string>>((resolve) => {
+      const isWin = process.platform === 'win32'
+      const child = spawn(isWin ? process.env.ComSpec ?? 'cmd' : 'pnpm',
+        isWin ? ['/d', '/s', '/c', 'pnpm outdated --json'] : ['outdated', '--json'],
+        { cwd: profileDir, env: { ...process.env, ...networkProxyEnv() }, windowsHide: true })
+      let out = ''
+      const timer = setTimeout(() => {
+        killTree(child) // 树杀：cmd 下面的 pnpm.cmd/node 孙进程一并带走
+        resolve(parseOutdatedJson(out))
+      }, 45_000)
+      child.stdout?.on('data', (d: Buffer) => { out += d.toString() })
+      child.on('error', () => { clearTimeout(timer); resolve({}) })
+      child.on('exit', () => { clearTimeout(timer); resolve(parseOutdatedJson(out)) })
+    })
   })
   // 后端来源配置：读取（含源码目录校验结果）/保存/选目录/重启生效
   ipcMain.handle('dsh-backend:get-config', () => {
@@ -484,13 +653,10 @@ function spawnDshAttempt(located: LocatedDsh, port: number | undefined): DshCont
   void dsh.url.then(() => { ready = true }, () => { /* 启动期失败由调用方处理 */ })
   dsh.exited.then(({ expected, code, signal }) => {
     log(`dsh 进程退出: expected=${expected} code=${String(code)} signal=${String(signal)}`)
-    if (!expected && !quitting && ready) {
-      void dialog.showMessageBox({
-        type: 'error',
-        title: 'DeepSeek Harness 意外退出',
-        message: `后端进程意外退出（code=${String(code)}）。`,
-        buttons: ['退出'],
-      }).then(() => app.quit())
+    // 意外退出 → 恢复模式：不弹窗不退出，切壳原生恢复页（handover §7.2）
+    if (!expected && !quitting && ready && dsh !== null) {
+      buildRecoveryContext('crashed', code, signal, dsh.recentOutput())
+      void showRecoveryPage()
     }
   })
   return dsh
@@ -534,7 +700,7 @@ async function startDshAndLoad(located: LocatedDsh): Promise<void> {
 
 /**
  * 解析生效后端（npm 全局 / git 源码目录，按用户偏好与可用性）并启动。
- * @returns 'ok' 已启动；'not-found' 两个来源都不可用（调用方展示引导页）；'failed' 启动失败（已弹窗并退出）。
+ * @returns 'ok' 已启动；'not-found' 两个来源都不可用（调用方展示引导页）；'failed' 启动失败（已进入恢复页）。
  */
 async function bootWithLocatedDsh(): Promise<'ok' | 'not-found' | 'failed'> {
   const resolved = resolveBackend()
@@ -553,19 +719,18 @@ async function bootWithLocatedDsh(): Promise<'ok' | 'not-found' | 'failed'> {
   } catch (err) {
     log(`dsh 启动失败: ${String(err)}`)
     if (!quitting) {
-      // 先取输出快照再停进程：弹窗要展示真实死因（如 dsh 0.1.3 起依赖
-      // 缺失 fs-ext 的 ERR_MODULE_NOT_FOUND 只出现在 stdout/stderr 里，
-      // 不在 err 信息里）。token 脱敏后展示。
-      const snapshot = dsh?.recentOutput() ?? ''
-      // 失败时 dsh 可能已监听端口（仅 HTTP 探测失败），先停掉再退出，
-      // 防止 dsh 变孤儿进程常驻后台、占用 DSH_HOME 文件锁
+      // 失败时 dsh 可能已监听端口（仅 HTTP 探测失败），先停掉，
+      // 防止 dsh 变孤儿进程常驻后台、占用 DSH_HOME 文件锁。
+      // stop() 对已退出进程安全（spawn.ts 内 exitCode 检查直接返回）。
+      // 真实死因（如 dsh 0.1.3 起依赖缺失 fs-ext 的 ERR_MODULE_NOT_FOUND）
+      // 只出现在 stdout/stderr 里、不在 err 信息里——快照取自环形缓冲
+      // （stop 不影响其内容），正是恢复页快照区的价值。
       if (dsh !== null) await dsh.stop()
-      const detail = snapshot.trim() === ''
-        ? String(err)
-        : `${String(err)}\n\n───── dsh 子进程输出（尾部，token 已脱敏） ─────\n`
-          + snapshot.replace(/token=[A-Za-z0-9_-]+/g, 'token=…').trim()
-      await dialog.showErrorBox('DeepSeek Harness 启动失败', detail)
-      app.quit()
+      // 启动失败 → 恢复模式（boot-failed）：不再弹窗退出（handover §7.2）。
+      // recentOutput 可能为空（HTTP 探测超时时 stderr 常无输出）：拼上失败
+      // 原因本身，其中的 EADDRINUSE 等特征是 parseFailure 的可识别材料。
+      buildRecoveryContext('boot-failed', null, null, (dsh?.recentOutput() ?? '') + '\n[shell] ' + String(err))
+      await showRecoveryPage()
     }
     return 'failed'
   }
@@ -575,21 +740,119 @@ async function bootWithLocatedDsh(): Promise<'ok' | 'not-found' | 'failed'> {
  * 停掉当前 dsh → 重新解析生效后端（版本/来源可能已变，如源码更新检出
  * 新 tag）→ 重启并重载窗口。npm 与源码两个更新器共用。
  */
+let restartInFlight: Promise<void> | null = null
 async function restartEffectiveBackend(): Promise<void> {
-  if (dsh !== null) { await dsh.stop(); dsh = null }
-  if (quitting) return
-  const resolved = resolveBackend()
-  if (resolved === null) throw new Error('重启后无法定位可用的 dsh 后端')
-  locatedDsh = resolved.located
-  backendNotice = resolved.notice ?? null
-  if (locatedDsh.source === 'git-local' && locatedDsh.cwd !== undefined) {
-    initSourceUpdater(locatedDsh.version, locatedDsh.cwd)
-  } else {
-    initBackendUpdater(locatedDsh.version)
+  // 互斥：版本安装完成与插件 CLI 完成（乃至用户手动重启）时间重叠时共享同一次
+  // 重启——否则两个并发 stop+spawn 会产生双 dsh 进程（前者沦为孤儿）。
+  if (restartInFlight !== null) {
+    await restartInFlight
+    return
   }
-  win?.webContents.send('dsh-backend:update-status', { stage: 'restarting', message: '正在重启后端…' })
-  await startDshAndLoad(locatedDsh)
-  pushBackendNotice()
+  restartInFlight = (async () => {
+    if (dsh !== null) { await dsh.stop(); dsh = null }
+    if (quitting) return
+    const resolved = resolveBackend()
+    if (resolved === null) throw new Error('重启后无法定位可用的 dsh 后端')
+    locatedDsh = resolved.located
+    backendNotice = resolved.notice ?? null
+    if (locatedDsh.source === 'git-local' && locatedDsh.cwd !== undefined) {
+      initSourceUpdater(locatedDsh.version, locatedDsh.cwd)
+    } else {
+      initBackendUpdater(locatedDsh.version)
+    }
+    win?.webContents.send('dsh-backend:update-status', { stage: 'restarting', message: '正在重启后端…' })
+    await startDshAndLoad(locatedDsh)
+    pushBackendNotice()
+  })()
+  try {
+    await restartInFlight
+  } finally {
+    restartInFlight = null
+  }
+}
+
+/**
+ * 恢复模式 IPC：get-state 供恢复页渲染；exit-restart 清上下文并走
+ * 统一重启（restartEffectiveBackend 会 loadURL 回 dsh 页面）；重启失败
+ * 重新进入 boot-failed 上下文，页面留在恢复页刷新状态。
+ */
+function registerRecoveryIpc(): void {
+  let restarting = false
+  ipcMain.handle('recovery:get-state', (event) => fromRecoveryPage(event) ? getRecoveryContext() : null)
+  // 恢复页主题：读 dsh ui-theme 偏好（$DSH_HOME/settings.yaml）；文件缺失/
+  // 解析失败 → null，页面侧不设 data-theme，走 CSS prefers-color-scheme
+  // 跟随系统（优雅降级）。dsh 崩溃后无法向活体查询，只能直接读文件。
+  ipcMain.handle('recovery:get-theme', (event) => {
+    if (!fromRecoveryPage(event)) return { preference: null }
+    let text = ''
+    try { text = readFileSync(join(dshHomeDir(), 'settings.yaml'), 'utf8') } catch { /* 缺失/不可读 → 降级 */ }
+    return { preference: parseThemePreference(text) }
+  })
+  ipcMain.handle('recovery:exit-restart', async (event) => {
+    if (!fromRecoveryPage(event)) return { ok: false, error: 'forbidden' }
+    if (restarting) return { ok: false, busy: true }
+    // 维护管线（版本切换/插件 CLI/源码更新）进行中拒绝手动重启：
+    // 各管线完成时自带的重启会接管，手动重启等它结束再点。
+    if (versionBusy || pluginsBusy || sourceBusy || isSourceUpdating()) return { ok: false, busy: true }
+    restarting = true
+    clearRecoveryContext()
+    try {
+      await restartEffectiveBackend()
+      return { ok: true }
+    } catch (err) {
+      log(`recovery:exit-restart 失败 ${String(err)}`)
+      buildRecoveryContext('boot-failed', null, null, String(err))
+      return { ok: false, error: String(err) }
+    } finally {
+      restarting = false
+    }
+  })
+  ipcMain.handle('recovery:open-log-file', async (event) => {
+    if (!fromRecoveryPage(event)) return { ok: false, error: 'forbidden' }
+    const dir = join(app.getPath('userData'), 'logs')
+    // dev 下日志走 stdout、目录可能从未创建：先确保存在，否则 openPath 静默失败
+    try { mkdirSync(dir, { recursive: true }) } catch { /* 打开失败仍会返回错误 */ }
+    const err = await shell.openPath(dir)
+    return err === '' ? { ok: true } : { ok: false, error: err }
+  })
+  ipcMain.handle('recovery:copy-diagnosis', (event) => {
+    if (!fromRecoveryPage(event)) return { ok: false, error: 'forbidden' }
+    const c = getRecoveryContext()
+    if (c === null) return { ok: false, error: 'no context' }
+    clipboard.writeText(JSON.stringify(c, null, 2))
+    return { ok: true }
+  })
+  // 手动进入恢复中心（设置页入口）：maintenance 语义——无诊断结论，版本区/插件区可用
+  ipcMain.handle('recovery:open', (event) => {
+    if (!fromDshPage(event)) return { ok: false, error: 'forbidden' }
+    buildRecoveryContext('maintenance', null, null, '')
+    void showRecoveryPage()
+    return { ok: true }
+  })
+  // 设置页版本更新交接：跳恢复页（purpose=update，页面不渲染异常观感）并自动
+  // 开始安装目标版本；进度经 recovery:log 流式到达版本区，完成后管线自动重启
+  // 后端并 loadURL 回 dsh 页（installBackendVersion/installSourceVersion 内置）。
+  ipcMain.handle('recovery:open-update', (event, target: unknown) => {
+    if (!fromDshPage(event)) return { ok: false, error: 'forbidden' }
+    if (typeof target !== 'string' || target === '') return { ok: false, error: 'invalid' }
+    if (versionBusy || pluginsBusy || sourceBusy || isSourceUpdating()) return { ok: false, busy: true }
+    buildRecoveryContext('maintenance', null, null, '', 'update')
+    void showRecoveryPage()
+    versionBusy = true
+    void (async () => {
+      try {
+        const s = locatedDsh?.source === 'git-local'
+          ? await installSourceVersion(target)
+          : await installBackendVersion(target)
+        if (s.stage !== 'done') log(`recovery:open-update 未完成: ${String(s.error ?? '')}`)
+      } catch (err) {
+        log(`recovery:open-update 失败 ${String(err)}`)
+      } finally {
+        versionBusy = false
+      }
+    })()
+    return { ok: true }
+  })
 }
 
 /** 引导安装 IPC：复制命令 / 壳内一键安装 / 重新检测。 */
@@ -797,6 +1060,7 @@ function main(): void {
     registerAppIpc()
     registerSetupIpc()
     registerSourceIpc()
+    registerRecoveryIpc()
     const trayHandlers: TrayHandlers = { show: showWindow, quit: () => void quitApp() }
     createTray(iconPath(), trayHandlers)
 
@@ -814,8 +1078,14 @@ function main(): void {
     // 桌壳更新状态实时推给设置页（两段式 UI：发现新版/下载中/可安装；后台
     // 15s 自动检查发现的版本同样经此到达页面，但下载始终由用户按钮触发）
     onUpdateStatus((s) => { win?.webContents.send('dsh-update:status', s) })
-    // 源码管线的实时日志（下载更新/克隆/准备环境共用）转发给设置页日志区
-    setSourceLogSink((line) => { if (!quitting) win?.webContents.send('dsh-source:log', line) })
+    // 源码管线的实时日志（下载更新/克隆/准备环境共用）转发给设置页日志区 +
+    // 恢复页版本区（recovery:log 聚合通道，两个页面可同时订阅）
+    // 实时日志出口统一脱敏（与快照同标准）：恢复页版本区与设置页日志区展示的
+    // 都是原始子进程输出；token 恰好跨 chunk 的极端漏网由异常退出快照的整体
+    // 脱敏（buildRecoveryContext）兜底
+    setSourceLogSink((line) => { if (!quitting) { win?.webContents.send('dsh-source:log', sanitizeLog(line)); win?.webContents.send('recovery:log', sanitizeLog(line)) } })
+    // npm 侧版本切换的实时日志（M2 新增）
+    setBackendLogSink((line) => { if (!quitting) win?.webContents.send('recovery:log', sanitizeLog(line)) })
     setSourceUpdateHooks({
       restartBackend: restartEffectiveBackend,
       stopBackend: async () => { if (dsh !== null) { await dsh.stop(); dsh = null } },

@@ -15,6 +15,9 @@ import { log } from './log.js'
 import { getNetworkProxy, networkProxyEnv } from './settings.js'
 import { pickLatestTag, tagVersion, validateSourceDir, isOfficialRemoteUrl } from './dsh-source.js'
 import { compareVersions } from './dsh-locator.js'
+import { SEMVER_RE } from './dsh-update-target.js'
+import { killTree } from './kill-tree.js'
+import type { BackendVersion } from './dsh-versions.js'
 import type { BackendUpdateStatus } from './dsh-updater.js'
 
 let currentVersion = 'unknown'
@@ -82,7 +85,7 @@ const proxyEnv = networkProxyEnv
  * git 是 .exe 直接 spawn（args 数组原样传达，路径含空格安全）；pnpm 是
  * .cmd shim，经 ComSpec /c 解析（参数均为受控字面量，无空格敏感值）。
  */
-function runStreamed(bin: string, args: string[], opts: { cwd: string; viaShell?: boolean; env?: NodeJS.ProcessEnv }): Promise<string> {
+function runStreamed(bin: string, args: string[], opts: { cwd: string; viaShell?: boolean; env?: NodeJS.ProcessEnv; timeoutMs?: number }): Promise<string> {
   return new Promise((resolve, reject) => {
     const started = Date.now()
     const isWin = process.platform === 'win32'
@@ -92,12 +95,19 @@ function runStreamed(bin: string, args: string[], opts: { cwd: string; viaShell?
           cwd: opts.cwd, env: { ...process.env, ...opts.env }, windowsHide: true,
         })
       : spawn(bin, args, { cwd: opts.cwd, env: { ...process.env, ...opts.env }, windowsHide: true })
+    // fetch/install/build 挂起（网络/文件锁）时强杀：防 sourceBusy/isSourceUpdating 永久占用
+    const timeoutMs = opts.timeoutMs ?? 900_000
+    const timer = setTimeout(() => {
+      killTree(child) // 树杀:cmd 下面的 pnpm/npm 孙进程一并带走
+      reject(new Error(`${bin} ${args[0]} 超时（${Math.round(timeoutMs / 1000)}s），已终止`))
+    }, timeoutMs)
     let out = ''
     const push = (d: Buffer): void => { const t = d.toString(); out += t; emitLog(t) }
     child.stdout?.on('data', push)
     child.stderr?.on('data', push)
-    child.on('error', reject)
+    child.on('error', (e) => { clearTimeout(timer); reject(e) })
     child.on('exit', (code) => {
+      clearTimeout(timer)
       const seconds = Math.round((Date.now() - started) / 1000)
       if (code === 0) resolve(out)
       else reject(new Error(`${bin} ${args[0]} 失败 (code=${String(code)}，耗时 ${seconds}s)`))
@@ -134,8 +144,27 @@ async function resolveOfficialRemote(dir: string): Promise<string> {
   )
 }
 
-/** 检查远端最新 tag；与当前一致时 latest 置 null（无更新）。 */
+/**
+ * 版本清单（恢复页版本区数据源）：fetch 官方 remote tag → 按版本排序解析。
+ * 每次调用独立 fetch（无缓存，避免列表与真实远端脱节）。
+ */
+export async function listSourceVersions(): Promise<BackendVersion[]> {
+  const dir = requireDir()
+  const remote = await resolveOfficialRemote(dir)
+  await runGit(dir, ['fetch', remote, '--tags', '--prune'])
+  const out = await runGit(dir, ['tag', '--list', 'dsh-v*', '--sort=-v:refname'])
+  const result: BackendVersion[] = []
+  for (const tag of out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)) {
+    const ver = tagVersion(tag)
+    if (ver === null) continue
+    result.push({ version: ver, tags: [], isCurrent: ver === currentVersion, isOlder: compareVersions(ver, currentVersion) < 0 })
+  }
+  return result
+}
+
+/** 检查远端最新 tag；与当前一致时 latest 置 null（无更新）。切换/安装进行中直接返回现状。 */
 export async function checkSourceUpdate(): Promise<BackendUpdateStatus> {
+  if (status.stage === 'updating') return { ...status }
   status.current = currentVersion
   status.stage = 'checking'
   status.error = undefined
@@ -163,21 +192,26 @@ export async function checkSourceUpdate(): Promise<BackendUpdateStatus> {
   return { ...status }
 }
 
-/** 下载更新：检出 tag → pnpm install → pnpm build → 重启后端。 */
-export async function updateSource(): Promise<BackendUpdateStatus> {
-  if (status.latest === null) {
-    status.stage = 'idle'
+/**
+ * 切换到任意 tag 版本（升级/回退统一入口）：工作区干净 → 检出 tag（detached
+ * HEAD）→ pnpm install → pnpm build → 校验 → 重启后端。目标串拼进 tag 名前
+ * 必须过 SEMVER_RE 白名单（安全边界）；「低于当前」提醒由 UI 确认框负责。
+ * 失败不回滚（与 npm 流一致）：tag 已检出时重启应用即继续用新检出。
+ */
+export async function installSourceVersion(target: string): Promise<BackendUpdateStatus> {
+  if (!SEMVER_RE.test(target)) {
+    status.stage = 'error'
+    status.error = `非法的版本号：${target}`
     publish()
     return { ...status }
   }
   if (status.stage === 'updating') return { ...status } // 并发锁
-  const target = status.latest
   const dir = requireDir()
   status.stage = 'updating'
   status.error = undefined
   publish()
   try {
-    emitLog(`[shell] 开始更新到 dsh-v${target}`)
+    emitLog(`[shell] 开始切换到 dsh-v${target}`)
     const porcelain = await runGit(dir, ['status', '--porcelain'])
     if (porcelain.trim() !== '') throw new Error('工作区有未提交的修改，无法自动检出；请先在源码目录手动处理')
     emitLog(`[shell] 工作区干净，正在检出 dsh-v${target}（detached HEAD）`)
@@ -195,31 +229,41 @@ export async function updateSource(): Promise<BackendUpdateStatus> {
     emitLog('[shell] 正在构建（pnpm build：全部包 lib + 前端 dist）')
     await runPnpm(dir, ['build'])
     const v = validateSourceDir(dir)
-    if (!v.ok) throw new Error(`更新后校验失败：${v.missing.join('；')}`)
+    if (!v.ok) throw new Error(`切换后校验失败：${v.missing.join('；')}`)
     currentVersion = v.version
     status.current = v.version
     status.latest = null
     status.checked = true
     status.stage = 'done'
-    emitLog(`[shell] ✓ 已更新到 ${v.version}`)
-    log(`dsh-source-updater: 已更新到 ${v.version}`)
+    emitLog(`[shell] ✓ 已切换到 ${v.version}`)
+    log(`dsh-source-updater: 已切换到 ${v.version}`)
   } catch (err) {
     status.stage = 'error'
     status.error = String(err)
-    emitLog(`[shell] ✗ 更新失败：${String(err)}（重启应用即可继续用旧检出）`)
-    log(`dsh-source-updater: 更新失败 ${String(err)}`)
+    emitLog(`[shell] ✗ 切换失败：${String(err)}（重启应用即可继续用旧检出）`)
+    log(`dsh-source-updater: 切换失败 ${String(err)}`)
     publish()
     return { ...status }
   }
-  // 更新成功但重启失败不误报「更新失败」：版本已检出，仅提示重启
+  // 切换成功但重启失败不误报「切换失败」：版本已检出，仅提示重启
   if (hooks !== null) {
     try {
       await hooks.restartBackend()
     } catch (err) {
-      status.error = `已更新到 ${currentVersion}，但重启后端失败：${String(err)}（重启应用即可生效）`
+      status.error = `已切换到 ${currentVersion}，但重启后端失败：${String(err)}（重启应用即可生效）`
       log(`dsh-source-updater: ${status.error}`)
     }
   }
   publish()
   return { ...status }
+}
+
+/** 「检查=提示升级」入口（薄封装）：无更高版本返回 idle；否则走 installSourceVersion。 */
+export async function updateSource(): Promise<BackendUpdateStatus> {
+  if (status.latest === null) {
+    status.stage = 'idle'
+    publish()
+    return { ...status }
+  }
+  return installSourceVersion(status.latest)
 }

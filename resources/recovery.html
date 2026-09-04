@@ -1,0 +1,583 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>DeepSeek Harness · 恢复模式</title>
+<style>
+  /* 深色主题与壳一致（LOADING_HTML/SETUP_HTML 同款基色）。刻意不含 #root
+     元素：标题栏注入（src/titlebar.ts）以 #root 缺失跳过本页，拖拽条自备。 */
+  /* 双主题：默认浅色（参照 dsh design-platform.css 浅色基调：bg 白、
+     bluish-100 #ebeef2 附近）；@media 跟随系统深色；显式 [data-theme] 覆盖
+     （ui-theme.preference=light/dark 时由 JS 设置）。配色尽力贴近 dsh token，
+     不复刻——见交接文档 §3 2026-09-05。 */
+  :root {
+    --bg: #ffffff; --panel: #f0f2f5; --line: #dfe3e8; --text: #1b1b1c;
+    --muted: #4a5568; --faint: #8a93a5; --accent: #2e7cd6; --brand: #4176E6;
+    --warn: #a97a15; --bad: #c94f3d; --ok: #3f9053;
+    --chip-bg: #f9e9e9; --chip-border: #e5bfb8; --chip-text: #a03226;
+    --mono: #4a5568; --ghost-border: #b9c2cc;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1a1a; --panel: #111; --line: #333; --text: #e8e8e8;
+      --muted: #aab3c0; --faint: #6b7686; --accent: #4d9fff; --brand: #4176E6;
+      --warn: #e6b441; --bad: #e66d5a; --ok: #58b368;
+      --chip-bg: #24161a; --chip-border: #5a3a42; --chip-text: #f0a898;
+      --mono: #9aa4b2; --ghost-border: #444;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #ffffff; --panel: #f0f2f5; --line: #dfe3e8; --text: #1b1b1c;
+    --muted: #4a5568; --faint: #8a93a5; --accent: #2e7cd6; --brand: #4176E6;
+    --warn: #a97a15; --bad: #c94f3d; --ok: #3f9053;
+    --chip-bg: #f9e9e9; --chip-border: #e5bfb8; --chip-text: #a03226;
+    --mono: #4a5568; --ghost-border: #b9c2cc;
+  }
+  :root[data-theme="dark"] {
+    --bg: #1a1a1a; --panel: #111; --line: #333; --text: #e8e8e8;
+    --muted: #aab3c0; --faint: #6b7686; --accent: #4d9fff; --brand: #4176E6;
+    --warn: #e6b441; --bad: #e66d5a; --ok: #58b368;
+    --chip-bg: #24161a; --chip-border: #5a3a42; --chip-text: #f0a898;
+    --mono: #9aa4b2; --ghost-border: #444;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+         font: 14px/1.7 system-ui, sans-serif; }
+  /* 26px 自绘标题条：frameless 窗口的拖拽区与窗口控制（与 titlebar.ts 同高） */
+  #titlebar { position: fixed; top: 0; left: 0; right: 0; height: 26px; z-index: 9999;
+              display: flex; align-items: stretch; justify-content: space-between;
+              -webkit-app-region: drag; background: var(--bg); }
+  #titlebar .t { font-size: 12px; color: var(--faint); align-self: center; padding: 0 12px; }
+  #titlebar .btns { display: flex; }
+  #titlebar button { width: 46px; height: 26px; border: 0; margin: 0; padding: 0;
+                     background: transparent; color: var(--muted); cursor: default;
+                     display: flex; align-items: center; justify-content: center;
+                     -webkit-app-region: no-drag; font-size: 11px; }
+  #titlebar button:hover { background: var(--brand); color: #fff; }
+  main { max-width: 860px; margin: 0 auto; padding: 42px 24px 32px; }
+  h1 { font-size: 19px; margin: 0 0 4px; }
+  .sub { color: var(--faint); font-size: 12px; margin: 0 0 20px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+          padding: 14px 16px; margin: 12px 0; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 999px;
+           font-size: 12px; border: 1px solid var(--line); color: var(--muted); }
+  .badge.bad { color: var(--bad); border-color: var(--bad); }
+  .badge.warn { color: var(--warn); border-color: var(--warn); }
+  .chip { display: inline-block; padding: 2px 10px; margin: 2px 4px 2px 0; border-radius: 6px;
+          background: var(--chip-bg); border: 1px solid var(--chip-border); color: var(--chip-text);
+          font-family: Consolas, monospace; font-size: 12px; }
+  .label { color: var(--faint); font-size: 12px; }
+  .diag-title { font-size: 15px; margin: 2px 0 6px; }
+  p { color: var(--muted); margin: 8px 0; }
+  pre { background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+        padding: 12px; margin: 8px 0 0; white-space: pre-wrap; word-break: break-all;
+        font-size: 12px; color: var(--mono); max-height: 260px; overflow-y: auto; }
+  button.act { border: none; border-radius: 6px; padding: 9px 18px; cursor: pointer;
+               font-size: 13px; background: var(--brand); color: #fff; }
+  button.act:disabled { opacity: .5; cursor: default; }
+  button.ghost { background: transparent; border: 1px solid var(--ghost-border); color: var(--text); }
+  button.ghost:hover { border-color: var(--accent); }
+  .primary { font-size: 14px; padding: 11px 22px; }
+  .hint { font-size: 12px; color: var(--faint); }
+  .version-list { margin: 4px 0; }
+  .vrow { display: flex; align-items: center; gap: 8px; padding: 5px 4px;
+          border-bottom: 1px solid var(--line); font-size: 13px; }
+  .vrow:last-child { border-bottom: none; }
+  .vrow .vname { font-family: Consolas, monospace; color: var(--text); }
+  .vrow .vdesc { color: var(--faint); font-size: 12px; flex: 1; }
+  .badge.tag { color: var(--accent); border-color: var(--accent); }
+  .badge.latest { color: var(--ok); border-color: var(--ok); }
+  .badge.cur { color: var(--warn); border-color: var(--warn); }
+  .vrow button.act { min-width: 88px; }
+  .prow { display: flex; align-items: center; gap: 8px; padding: 6px 4px;
+          border-bottom: 1px solid var(--line); font-size: 13px; }
+  .prow:last-child { border-bottom: none; }
+  .prow .pname { font-family: Consolas, monospace; color: var(--text); flex: 1; }
+  .prow .pdesc { color: var(--faint); font-size: 12px; }
+  .prow button.act { padding: 3px 12px; font-size: 12px; min-width: 88px; }
+</style>
+</head>
+<body>
+<div id="titlebar">
+  <span class="t">DeepSeek Harness · 恢复模式</span>
+  <span class="btns">
+    <button id="btnMin" title="最小化">─</button>
+    <button id="btnMax" title="最大化/还原">□</button>
+    <button id="btnClose" title="关闭（隐藏到托盘）">✕</button>
+  </span>
+</div>
+
+<main>
+  <h1>恢复模式</h1>
+  <p class="sub">dsh 无法正常运行时，在这里诊断与处置。修复动作完成后点「重启 dsh 并返回」。</p>
+
+  <div class="card">
+    <div class="row">
+      <span id="badge" class="badge">…</span>
+      <span class="label" id="meta"></span>
+    </div>
+    <div id="diag" class="diag-title">正在读取诊断…</div>
+    <div id="plugins" class="row"></div>
+    <p id="advice" class="hint"></p>
+  </div>
+
+  <div class="card">
+    <div class="row" style="justify-content: space-between">
+      <span class="label">dsh 版本（升级 / 回退）</span>
+      <button class="act ghost" id="btnRefreshVersions" style="padding: 3px 12px; font-size: 12px">刷新</button>
+    </div>
+    <div id="version-list" class="version-list"><span class="hint">正在加载版本清单…</span></div>
+    <pre id="version-log" style="display: none"></pre>
+    <p class="hint">切换到低于当前版本属于回退：npm 源会全局覆盖安装；源码源需重新构建（约 1-3 分钟）。</p>
+  </div>
+
+  <div class="card">
+    <div class="row" style="justify-content: space-between">
+      <span class="label">插件救火区（先禁用，禁用无效再卸载/更新）</span>
+      <button class="act ghost" id="btnRefreshPlugins" style="padding: 3px 12px; font-size: 12px">刷新</button>
+    </div>
+    <div id="plugin-list" class="version-list"><span class="hint">正在加载插件清单…</span></div>
+  </div>
+
+  <div class="card">
+    <div class="row" style="justify-content: space-between">
+      <span class="label">后端输出快照（最近 200 行，token 已脱敏）</span>
+      <button class="act ghost" id="toggleSnap" style="padding: 3px 12px; font-size: 12px">展开</button>
+    </div>
+    <pre id="snap" style="display: none"></pre>
+  </div>
+
+  <div class="row" style="margin-top: 18px">
+    <button class="act primary" id="btnRestart">重启 dsh 并返回</button>
+    <button class="act ghost" id="btnLog">打开日志目录</button>
+    <button class="act ghost" id="btnCopy">复制诊断信息</button>
+  </div>
+  <p class="hint">也可以直接关闭窗口——桌面壳会留在托盘，下次打开仍是本页；「重启 dsh 并返回」随时可用。</p>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id)
+  const bridge = window.dshDesktop
+
+  // 窗口控制（frameless：本页不被 titlebar 注入覆盖，控制自备）
+  $('btnMin').onclick = () => bridge.minimize()
+  $('btnMax').onclick = () => bridge.maximizeToggle()
+  $('btnClose').onclick = () => bridge.close()
+
+  const KIND_TEXT = {
+    'crashed': 'dsh 已意外退出',
+    'boot-failed': 'dsh 启动失败',
+    'maintenance': '恢复中心',
+  }
+
+  function renderDiag(s) {
+    const badge = $('badge')
+    badge.textContent = KIND_TEXT[s.kind] ?? s.kind
+    badge.className = 'badge ' + (s.kind === 'maintenance' ? '' : 'bad')
+    $('meta').textContent =
+      'dsh ' + s.dshVersion + (s.dshSource === 'git-local' ? '（源码构建）' : s.dshSource === 'npm-global' ? '（npm 全局）' : '') +
+      ' · 进入时间 ' + new Date(s.enteredAt).toLocaleString() +
+      (s.code !== null ? ' · 退出码 ' + s.code : '')
+
+    const diag = $('diag'), plugins = $('plugins'), advice = $('advice')
+    plugins.textContent = ''
+    if (s.diagnosis.kind === 'plugin-load-failure') {
+      diag.textContent = '检测到插件加载失败：'
+      for (const name of s.diagnosis.plugins) {
+        const c = document.createElement('span')
+        c.className = 'chip'
+        c.textContent = name
+        plugins.appendChild(c)
+      }
+      advice.textContent = '常见原因是插件与当前 dsh 版本不适配：可回退 dsh 到升级前版本，或等待插件更新。'
+    } else if (s.diagnosis.kind === 'port-conflict') {
+      diag.textContent = '端口被占用，dsh 无法监听'
+      advice.textContent = '可在设置页把端口策略改为随机端口后重启。'
+    } else {
+      diag.textContent = '未能自动定位失败原因'
+      advice.textContent = '请查看下方输出快照或完整日志定位问题；修复后点「重启 dsh 并返回」。'
+    }
+  }
+
+  let expanded = false
+  $('toggleSnap').onclick = () => {
+    expanded = !expanded
+    $('snap').style.display = expanded ? 'block' : 'none'
+    $('toggleSnap').textContent = expanded ? '折叠' : '展开'
+  }
+
+  $('btnRestart').onclick = async () => {
+    $('btnRestart').disabled = true
+    $('btnRestart').textContent = '正在重启 dsh…'
+    const reset = () => {
+      $('btnRestart').disabled = false
+      $('btnRestart').textContent = '重启 dsh 并返回'
+    }
+    try {
+      const r = await bridge.recovery.exitRestart()
+      if (r.busy === true) {
+        reset()
+        alert('已有维护操作进行中，完成后再点本按钮。')
+        return
+      }
+      if (r.ok !== true) {
+        // 重启失败：主进程已重写为 boot-failed 上下文，留在本页刷新
+        reset()
+        await render()
+        alert('重启失败：' + (r.error ?? '未知原因'))
+      }
+    } catch (e) {
+      reset()
+      alert('重启请求失败：' + String(e))
+    }
+    // 成功时主进程已切回 dsh 页面，本页随之销毁
+  }
+  $('btnLog').onclick = async () => {
+    try {
+      const r = await bridge.recovery.openLogFile()
+      if (r.ok !== true) alert('无法打开日志目录：' + (r.error ?? '未知原因'))
+    } catch (e) {
+      alert('无法打开日志目录：' + String(e))
+    }
+  }
+  $('btnCopy').onclick = async () => {
+    const r = await bridge.recovery.copyDiagnosis()
+    if (r.ok === true) {
+      $('btnCopy').textContent = '已复制'
+      setTimeout(() => { $('btnCopy').textContent = '复制诊断信息' }, 1500)
+    }
+  }
+
+  // ---- 版本区（恢复页所有上下文共享：crashed/boot-failed/maintenance） ----
+  let versionSource = null
+  let versionLogListening = false
+  let switching = false
+
+  function versionRow(v) {
+    const row = document.createElement('div')
+    row.className = 'vrow'
+    const name = document.createElement('span')
+    name.className = 'vname'
+    name.textContent = v.version
+    row.appendChild(name)
+    if (v.isCurrent) {
+      const cur = document.createElement('span')
+      cur.className = 'badge cur'
+      cur.textContent = '当前'
+      row.appendChild(cur)
+    }
+    for (const tag of v.tags) {
+      const b = document.createElement('span')
+      b.className = 'badge ' + (tag === 'latest' ? 'latest' : 'tag')
+      b.textContent = tag
+      row.appendChild(b)
+    }
+    const desc = document.createElement('span')
+    desc.className = 'vdesc'
+    desc.textContent = v.isCurrent ? '当前生效版本' : v.isOlder ? (versionSource === 'git-local' ? '旧版本 · 需重新构建（分钟级）' : '旧版本 · 回退（全局覆盖）') : '新版本 · 升级'
+    row.appendChild(desc)
+    if (!v.isCurrent) {
+      const btn = document.createElement('button')
+      btn.className = 'act ghost'
+      btn.style.padding = '3px 12px'
+      btn.style.fontSize = '12px'
+      btn.textContent = '切换'
+      btn.onclick = () => switchTo(v, btn)
+      row.appendChild(btn)
+    }
+    return row
+  }
+
+  // 版本列表：当前版本置顶一份（始终可见），其余按版本降序；大概率只会用
+  // 最近几个，其余默认折叠、点击展开（用户反馈）。展开状态跨「刷新」保留。
+  let versionsExpanded = false
+  let lastVersionsState = null
+  const VERSIONS_VISIBLE = 5
+
+  function renderVersionList(s) {
+    const list = $('version-list')
+    list.textContent = ''
+    if (s.error !== undefined && s.error !== null) {
+      list.textContent = '版本清单获取失败：' + s.error
+      return
+    }
+    if (s.versions.length === 0) {
+      list.textContent = '暂无可用版本信息'
+      return
+    }
+    versionSource = s.source
+    lastVersionsState = s
+    const currents = s.versions.filter((v) => v.isCurrent)
+    const others = s.versions.filter((v) => !v.isCurrent)
+    for (const v of currents) list.appendChild(versionRow(v))
+    const visibleOthers = versionsExpanded ? others : others.slice(0, VERSIONS_VISIBLE)
+    for (const v of visibleOthers) list.appendChild(versionRow(v))
+    if (others.length > VERSIONS_VISIBLE) {
+      const toggle = document.createElement('button')
+      toggle.className = 'act ghost'
+      toggle.style.marginTop = '6px'
+      toggle.style.fontSize = '12px'
+      toggle.textContent = versionsExpanded
+        ? '收起旧版本'
+        : '展开其余 ' + (others.length - VERSIONS_VISIBLE) + ' 个版本'
+      toggle.onclick = () => {
+        versionsExpanded = !versionsExpanded
+        renderVersionList(lastVersionsState)
+      }
+      list.appendChild(toggle)
+    }
+  }
+
+  async function loadVersions() {
+    $('btnRefreshVersions').disabled = true
+    try {
+      renderVersionList(await bridge.backend.listVersions())
+    } catch (e) {
+      $('version-list').textContent = '版本清单获取失败：' + String(e)
+    } finally {
+      $('btnRefreshVersions').disabled = false
+    }
+  }
+  $('btnRefreshVersions').onclick = () => { void loadVersions() }
+
+  function pushVersionLog(t) {
+    const log = $('version-log')
+    log.style.display = 'block'
+    // 截断保留尾部 200KB：分钟级构建的输出不撑爆 DOM（textContent += 为 O(n²)）
+    log.textContent = (log.textContent + t).slice(-200000)
+    log.scrollTop = log.scrollHeight
+  }
+
+  // 回退切换两段式确认（覆盖安装/重新构建属于重操作）：首次点击进入待确认态
+  //（警告色「确认切换？」），5 秒内再点才执行，超时自动复位；升级无需确认。
+  function disarmSwitch(btn) {
+    btn.dataset.armed = ''
+    btn.textContent = '切换'
+    btn.style.color = ''
+    btn.style.borderColor = ''
+  }
+
+  async function switchTo(v, btn) {
+    if (switching) return
+    if (v.isOlder && btn.dataset.armed !== '1') {
+      btn.dataset.armed = '1'
+      btn.textContent = '确认切换？'
+      btn.style.color = 'var(--bad)'
+      btn.style.borderColor = 'var(--bad)'
+      if (btn._armTimer) clearTimeout(btn._armTimer)
+      btn._armTimer = setTimeout(() => { disarmSwitch(btn) }, 5000)
+      return
+    }
+    if (btn._armTimer) clearTimeout(btn._armTimer)
+    disarmSwitch(btn)
+    switching = true
+    btn.disabled = true
+    btn.textContent = '切换中…'
+    if (!versionLogListening) {
+      versionLogListening = true
+      bridge.backend.onVersionLog(pushVersionLog)
+    }
+    pushVersionLog('\n[shell] 开始切换到 ' + v.version + '…\n')
+    try {
+      const r = await bridge.backend.installVersion(v.version)
+      if (r.ok === true) return // 主进程将自动重启后端并 loadURL 回 dsh 页
+      if (r.busy === true) {
+        pushVersionLog('[shell] 已有维护操作进行中，请稍候再试\n')
+        alert('已有维护操作进行中，请稍候再试。')
+        return
+      }
+      pushVersionLog('[shell] ✗ 切换失败: ' + (r.error !== undefined && r.error !== null ? r.error : '未知原因') + '\n')
+      alert('切换失败：' + (r.error !== undefined && r.error !== null ? r.error : '未知原因'))
+    } catch (e) {
+      pushVersionLog('[shell] ✗ 切换异常: ' + String(e) + '\n')
+      alert('切换异常：' + String(e))
+    } finally {
+      switching = false
+      btn.disabled = false
+      btn.textContent = '切换'
+    }
+  }
+
+  // ---- 插件救火区 ----
+  let pluginBusy = false
+  let lastPluginList = null
+  let latestVersions = {}
+  let latestLoaded = false
+
+  function pluginDesc(p) {
+    const state = p.system ? '系统组件' : p.official ? '官方内置' : p.disabled ? '已禁用' : p.inBundles ? '生效中' : '未启用'
+    if (p.system || p.official || p.version === null) return state
+    let text = state + ' · v' + p.version
+    const latest = latestVersions[p.name]
+    if (latest !== undefined && latest !== p.version) text += ' → v' + latest + '（可更新）'
+    else if (latestLoaded && latest === undefined) text += '（已是最新）'
+    return text
+  }
+
+  function pluginRow(p) {
+    const row = document.createElement('div')
+    row.className = 'prow'
+    const name = document.createElement('span')
+    name.className = 'pname'
+    name.textContent = p.name
+    row.appendChild(name)
+    const desc = document.createElement('span')
+    desc.className = 'pdesc'
+    desc.textContent = pluginDesc(p)
+    row.appendChild(desc)
+    const mkBtn = (label, fn) => {
+      const b = document.createElement('button')
+      b.className = 'act ghost'
+      b.textContent = label
+      b.onclick = () => fn(b)
+      row.appendChild(b)
+    }
+    if (p.disabled) mkBtn('启用', (b) => togglePlugin(p, b, true))
+    else if (!p.system && !p.official && !p.protected) mkBtn('禁用', (b) => togglePlugin(p, b, false))
+    // 卸载/更新同样避开系统组件/官方内置/受保护模块——救火不能拆宿主
+    if (!p.system && !p.official && !p.protected) {
+      mkBtn('卸载', (b) => cliPlugin(p, b, 'remove'))
+      mkBtn('更新', (b) => cliPlugin(p, b, 'update'))
+    }
+    return row
+  }
+
+  function renderPluginList(ps) {
+    const list = $('plugin-list')
+    if (ps.length === 0) { list.textContent = '未安装第三方插件'; return }
+    // DocumentFragment + replaceChildren 原子替换：杜绝清空后逐行插入的闪烁
+    const frag = document.createDocumentFragment()
+    for (const p of ps) frag.appendChild(pluginRow(p))
+    list.replaceChildren(frag)
+  }
+
+  async function loadPlugins() {
+    $('btnRefreshPlugins').disabled = true
+    try {
+      lastPluginList = await bridge.plugins.list()
+      renderPluginList(lastPluginList)
+      // 异步补最新版本（pnpm outdated，失败/超时主进程返回空表 → 只显示当前版本）
+      latestVersions = await bridge.plugins.outdated()
+      latestLoaded = true
+      if (lastPluginList !== null) renderPluginList(lastPluginList)
+    }
+    catch (e) { $('plugin-list').textContent = '插件清单获取失败：' + String(e) }
+    finally { $('btnRefreshPlugins').disabled = false }
+  }
+  $('btnRefreshPlugins').onclick = () => { void loadPlugins() }
+
+  async function togglePlugin(p, btn, enable) {
+    if (pluginBusy) return
+    const label = enable ? '启用' : '禁用'
+    // 禁用/启用可逆、无破坏性：不弹确认，直接执行；列表刷新后的状态变化即反馈
+    pluginBusy = true
+    btn.disabled = true
+    btn.textContent = label + '中…'
+    try {
+      const r = enable ? await bridge.plugins.enable(p.name) : await bridge.plugins.disable(p.name)
+      if (r.ok !== true) { alert(label + '失败：' + (r.reason ?? '未知原因')); return }
+      await loadPlugins()
+    } catch (e) {
+      // 写入被拒（如 Windows 下 renameSync 遇 EPERM/EBUSY）时 IPC reject：必须提示，
+      // 否则用户看到「点了没反应」
+      alert(label + '异常：' + String(e))
+    } finally {
+      pluginBusy = false
+      btn.disabled = false
+      btn.textContent = label
+    }
+  }
+
+  // 卸载/更新两段式确认：首次点击进入待确认态（按钮变警告色 + 「确认卸载？」），
+  // 5 秒内再次点击才执行，超时自动复位——确认留在窗口内，不弹系统对话框。
+  function disarmCli(btn, label) {
+    btn.dataset.armed = ''
+    btn.textContent = label
+    btn.style.color = ''
+    btn.style.borderColor = ''
+  }
+
+  async function cliPlugin(p, btn, action) {
+    if (pluginBusy) return
+    const label = action === 'remove' ? '卸载' : '更新'
+    if (btn.dataset.armed !== '1') {
+      btn.dataset.armed = '1'
+      btn.textContent = '确认' + label + '？'
+      btn.style.color = 'var(--bad)'
+      btn.style.borderColor = 'var(--bad)'
+      if (btn._armTimer) clearTimeout(btn._armTimer)
+      btn._armTimer = setTimeout(() => { disarmCli(btn, label) }, 5000)
+      return
+    }
+    if (btn._armTimer) clearTimeout(btn._armTimer)
+    disarmCli(btn, label)
+    pluginBusy = true
+    btn.disabled = true
+    btn.textContent = label + '中…'
+    pushVersionLog('\n[shell] 开始' + label + ' ' + p.name + '…\n')
+    try {
+      const r = await bridge.plugins[action](p.name)
+      if (r.ok === true) return // 主进程完成时已重启后端并切回 dsh 页
+      if (r.busy === true) {
+        pushVersionLog('[shell] 已有维护操作进行中，请稍候再试\n')
+        alert('已有维护操作进行中，请稍候再试。')
+        return
+      }
+      pushVersionLog('[shell] ✗ ' + label + '失败: ' + (r.error ?? '未知原因') + '\n')
+      alert(label + '失败：' + (r.error ?? '未知原因'))
+    } catch (e) {
+      pushVersionLog('[shell] ✗ ' + label + '异常: ' + String(e) + '\n')
+      alert(label + '异常：' + String(e))
+    } finally {
+      pluginBusy = false
+      btn.disabled = false
+      btn.textContent = label
+    }
+  }
+
+  async function applyTheme() {
+    // 主题匹配：dsh ui-theme.preference（dark/light）→ 显式 data-theme；
+    // system/缺失/读取失败 → 不设 data-theme，CSS 媒体查询实时跟随系统。
+    let t = null
+    try { t = await bridge.recovery.getTheme() } catch (e) { /* 桥失败：纯 CSS 降级 */ }
+    const pref = t === null ? null : t.preference
+    if (pref === 'light' || pref === 'dark') document.documentElement.dataset.theme = pref
+  }
+
+  async function render() {
+    await applyTheme()
+    const s = await bridge.recovery.getState()
+    if (s === null) {
+      $('badge').textContent = '恢复中心'
+      $('diag').textContent = '当前无恢复上下文（手动进入的维护模式）。'
+      $('meta').textContent = ''
+      void loadVersions() // 维护模式无诊断上下文，版本区仍可用
+      void loadPlugins() // 插件救火区随诊断渲染加载
+      return
+    }
+    if (s.kind === 'maintenance') {
+      // 维护模式（设置页更新交接等）：无异常观感——中性引导文案、隐藏快照卡，
+      // 避免用户把正常操作误读为故障诊断。
+      const badge = $('badge')
+      badge.textContent = KIND_TEXT.maintenance
+      badge.className = 'badge'
+      $('diag').textContent = s.purpose === 'update'
+        ? '正在切换 dsh 版本，进度见下方日志；完成后桌面壳会自动重启并返回正常模式。'
+        : '版本切换与插件维护在这里进行，桌面壳会自动完成并重启返回。'
+      $('meta').textContent =
+        'dsh ' + s.dshVersion + (s.dshSource === 'git-local' ? '（源码构建）' : s.dshSource === 'npm-global' ? '（npm 全局）' : '')
+      $('advice').textContent = ''
+      $('snap').closest('.card').style.display = 'none'
+    } else {
+      renderDiag(s)
+      $('snap').closest('.card').style.display = ''
+      $('snap').textContent = s.outputTail !== '' ? s.outputTail : '（无输出）'
+    }
+    void loadVersions() // 版本区随诊断渲染加载（与 get-state 并行，不阻塞主渲染）
+    void loadPlugins() // 插件救火区随诊断渲染加载
+  }
+  render().catch((e) => { $('diag').textContent = '渲染失败: ' + String(e) })
+</script>
+</body>
+</html>

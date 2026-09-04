@@ -71,6 +71,27 @@ contextBridge.exposeInMainWorld('dshDesktop', {
       ipcRenderer.on('dsh-backend:notice', handler)
       return () => ipcRenderer.removeListener('dsh-backend:notice', handler)
     },
+    // 版本清单 / 切换任意版本 / 实时日志（恢复页版本区）
+    listVersions: (): Promise<unknown> => ipcRenderer.invoke('dsh-backend:versions'),
+    installVersion: (target: string): Promise<{ ok: boolean; busy?: boolean; error?: string }> =>
+      ipcRenderer.invoke('dsh-backend:install-version', target),
+    onVersionLog: (cb: (t: string) => void): (() => void) => {
+      const handler = (_event: unknown, t: string): void => cb(t)
+      ipcRenderer.on('recovery:log', handler)
+      return () => ipcRenderer.removeListener('recovery:log', handler)
+    },
+  },
+  plugins: {
+    list: (): Promise<unknown> => ipcRenderer.invoke('plugins:list'),
+    disable: (name: string): Promise<{ ok: boolean; applied: string[]; disabledCount: number; reason?: string | null }> =>
+      ipcRenderer.invoke('plugins:disable', name),
+    enable: (name: string): Promise<{ ok: boolean; applied: string[]; disabledCount: number; reason?: string | null }> =>
+      ipcRenderer.invoke('plugins:enable', name),
+    remove: (name: string): Promise<{ ok: boolean; busy?: boolean; error?: string }> =>
+      ipcRenderer.invoke('plugins:remove', name),
+    update: (name: string): Promise<{ ok: boolean; busy?: boolean; error?: string }> =>
+      ipcRenderer.invoke('plugins:update', name),
+    outdated: (): Promise<Record<string, string>> => ipcRenderer.invoke('plugins:outdated'),
   },
   setup: {
     copyCommand: (): Promise<boolean> => ipcRenderer.invoke('dsh-setup:copy-command'),
@@ -96,5 +117,19 @@ contextBridge.exposeInMainWorld('dshDesktop', {
     onSourceExit: (cb: (code: number | null) => void): void => {
       ipcRenderer.on('dsh-source:exit', (_event, code: number | null) => cb(code))
     },
+  },
+  recovery: {
+    getState: (): Promise<unknown> => ipcRenderer.invoke('recovery:get-state'),
+    getTheme: (): Promise<{ preference: 'light' | 'dark' | 'system' | null }> =>
+      ipcRenderer.invoke('recovery:get-theme'),
+    exitRestart: (): Promise<{ ok: boolean; busy?: boolean; error?: string }> =>
+      ipcRenderer.invoke('recovery:exit-restart'),
+    openLogFile: (): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('recovery:open-log-file'),
+    copyDiagnosis: (): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('recovery:copy-diagnosis'),
+    open: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('recovery:open'),
+    openUpdate: (target: string): Promise<{ ok: boolean; busy?: boolean; error?: string }> =>
+      ipcRenderer.invoke('recovery:open-update', target),
   },
 })
