@@ -1,3 +1,4 @@
 allowBuilds:
   sharp: true
   electron: true
+  electron-winstaller: false
