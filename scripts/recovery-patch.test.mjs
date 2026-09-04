@@ -7,7 +7,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'nod
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
-  parsePatchRows, bundlePatchInsertedIds, readUserPatchState,
+  parsePatchRows, parsePatchText, bundlePatchInsertedIds, readUserPatchState,
   rowIdsForPackage, disableRow, enableRow, isProtectedModule,
 } from '../dist/recovery/patch.js'
 
@@ -97,6 +97,35 @@ assert.deepEqual(state.inserts, ['a'])
   assert.equal(r2.ok, true)
   assert.match(readFileSync(p2, 'utf8'), /^- id: demo-main\n  disabled: false\n$/m)
 }
+// --- 多行 flow 数组：快速检测拦不住，写前整体校验必须拒绝且不改文件 ---
+{
+  const p = join(profileDir, 'flow-multi.yml')
+  writeFileSync(p, '[\n  { "id": "kept", "name": "x" }\n]\n', 'utf8')
+  assert.equal(parsePatchText(readFileSync(p, 'utf8')) === null, false, '前置：原文本身是合法顶层数组')
+  const before = readFileSync(p, 'utf8')
+  const r = await disableRow(p, 'demo-main')
+  assert.equal(r.ok, false, '多行 flow 追加必须被整体校验拒绝')
+  assert.equal(readFileSync(p, 'utf8'), before, '拒绝时不得改动原文件')
+}
+// --- enableRow 删空后必须恢复合法空补丁层（保留注释 + [] 行）---
+{
+  const p = join(profileDir, 'en3.yml')
+  writeFileSync(p, '# 用户补丁层说明\n- id: demo-main\n  disabled: true\n', 'utf8')
+  const r = await enableRow(p, 'demo-main')
+  assert.equal(r.ok, true)
+  const text = readFileSync(p, 'utf8')
+  assert.equal(text.includes('disabled: true'), false)
+  assert.equal(parsePatchText(text) === null, false, '产物必须是合法顶层数组（dsh validate 拒绝非数组）')
+  assert.match(text, /\[\]\s*$/, '末尾应恢复 [] placeholder')
+}
+// --- 读取失败（目录当文件）拒绝写入，绝不覆盖 ---
+{
+  const p = join(profileDir, 'dir-as-file.yml')
+  mkdirSync(p)
+  const r = await disableRow(p, 'demo-main')
+  assert.equal(r.ok, false, '读取失败必须拒绝而非当空文件覆盖')
+}
+
 // --- 保护名单 ---
 assert.equal(isProtectedModule('@deepseek-ai/dsh-settings-file'), true)
 assert.equal(isProtectedModule('@deepseek-ai/dsh-session'), true)

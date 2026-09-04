@@ -72,6 +72,16 @@ function readFileSafe(path: string): string {
   try { return readFileSync(path, 'utf8') } catch { return '' }
 }
 
+/** 读补丁层文本：ENOENT 视为空文件；其他读取错误拒绝——绝不覆盖读不到的文件。 */
+function readPatchFileStrict(path: string): { ok: true; text: string } | { ok: false; reason: string } {
+  try {
+    return { ok: true, text: readFileSync(path, 'utf8') }
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') return { ok: true, text: '' }
+    return { ok: false, reason: '补丁层读取失败（' + String(err) + '），已拒绝写入以免覆盖原文件' }
+  }
+}
+
 /** 一个包带来的行 id：包根 cordis.patch.yml + 声明的 dsh.bundle.patch 的 insert 子块
  *  （惯例路径在前，与测试规格一致；顺序对消费方 only every/some 无功能影响）。 */
 export function bundlePatchInsertedIds(packageDir: string): string[] {
@@ -173,33 +183,40 @@ function writeAtomic(path: string, content: string): void {
  * 注释化；顶层 flow 结尾与非法 entry 列表都拒绝。
  */
 function appendPatchEntry(patchPath: string, block: string): { ok: boolean; reason: string | null } {
-  const text = readFileSafe(patchPath)
+  const read = readPatchFileStrict(patchPath)
+  if (!read.ok) return { ok: false, reason: read.reason }
+  const text = read.text
   const core = text.trim()
+  let base: string
   if (core === '') {
-    writeAtomic(patchPath, block)
-    return { ok: true, reason: null }
+    base = block
+  } else {
+    const withoutComments = text.replace(/^[ \t]*#.*$/gmu, '').trim()
+    if (withoutComments === '') {
+      base = (text.endsWith('\n') ? text : text + '\n') + block
+    } else if (withoutComments === '[]' || withoutComments === '[ ]') {
+      const commented = text.replace(/^[ \t]*\[[ \t]*\][ \t]*(?:#.*)?(?:\r?\n|$)/mu, '# []\n')
+      base = (commented.endsWith('\n') ? commented : commented + '\n') + block
+    } else {
+      const lastContentLine = text.split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line !== '' && !line.startsWith('#'))
+        .pop() ?? ''
+      if (/^[[{]/.test(lastContentLine)) {
+        return { ok: false, reason: '补丁层以顶层流式结构结尾，不支持自动追加；请先整理为条目列表' }
+      }
+      if (parsePatchFile(patchPath) === null) {
+        return { ok: false, reason: '补丁层不是合法的条目数组，已拒绝追加以免破坏；请先修正 YAML' }
+      }
+      base = (text.endsWith('\n') ? text : text + '\n') + block
+    }
   }
-  const withoutComments = text.replace(/^[ \t]*#.*$/gmu, '').trim()
-  if (withoutComments === '') {
-    writeAtomic(patchPath, (text.endsWith('\n') ? text : text + '\n') + block)
-    return { ok: true, reason: null }
+  // 写前整体校验：任何形态（含多行 flow 数组等快速检测拦不住的形态）追加后
+  // 必须仍是合法的顶层数组，否则拒绝且不动原文件——修复动作绝不能制造启动失败。
+  if (parsePatchText(base) === null) {
+    return { ok: false, reason: '追加后将破坏补丁层结构（不是合法的顶层数组），已拒绝写入' }
   }
-  if (withoutComments === '[]' || withoutComments === '[ ]') {
-    const commented = text.replace(/^[ \t]*\[[ \t]*\][ \t]*(?:#.*)?(?:\r?\n|$)/mu, '# []\n')
-    writeAtomic(patchPath, (commented.endsWith('\n') ? commented : commented + '\n') + block)
-    return { ok: true, reason: null }
-  }
-  const lastContentLine = text.split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line !== '' && !line.startsWith('#'))
-    .pop() ?? ''
-  if (/^[[{]/.test(lastContentLine)) {
-    return { ok: false, reason: '补丁层以顶层流式结构结尾，不支持自动追加；请先整理为条目列表' }
-  }
-  if (parsePatchFile(patchPath) === null) {
-    return { ok: false, reason: '补丁层不是合法的条目数组，已拒绝追加以免破坏；请先修正 YAML' }
-  }
-  writeAtomic(patchPath, (text.endsWith('\n') ? text : text + '\n') + block)
+  writeAtomic(patchPath, base)
   return { ok: true, reason: null }
 }
 
@@ -227,9 +244,16 @@ export function enableRow(patchPath: string, rowId: string): Promise<{ ok: boole
     const state = readUserPatchState(patchPath)
     const escaped = rowId.replace(/[.*+?]/g, '\\$&')
     const blockRe = new RegExp('^- id: [\'"]?' + escaped + '[\'"]?\r?\n  disabled: true\r?\n', 'mu')
-    const text = readFileSafe(patchPath)
+    const read = readPatchFileStrict(patchPath)
+    if (!read.ok) return { ok: false, reason: read.reason }
+    const text = read.text
     if (blockRe.test(text)) {
-      writeAtomic(patchPath, withPlaceholderRestored(text.replace(blockRe, '')))
+      const next = withPlaceholderRestored(text.replace(blockRe, ''))
+      // 删块后必须仍是合法顶层数组（纯注释会被 dsh validate 拒绝 → 启动失败）
+      if (parsePatchText(next) === null) {
+        return { ok: false, reason: '启用后将破坏补丁层结构（不是合法的顶层数组），已拒绝写入' }
+      }
+      writeAtomic(patchPath, next)
       return { ok: true, reason: null }
     }
     if (state.forced.includes(rowId)) return { ok: true, reason: null }
@@ -237,9 +261,16 @@ export function enableRow(patchPath: string, rowId: string): Promise<{ ok: boole
   })
 }
 
-/** 删光后把 `[]` placeholder 恢复（纯注释不是顶层数组，dsh 会拒绝启动）。 */
+/** 删光条目后恢复合法空补丁层：保留注释行，末尾补 `[]` 行（纯注释不是
+ *  顶层数组，dsh 会拒绝启动）；仍有非注释内容时原样返回。 */
 function withPlaceholderRestored(text: string): string {
-  const stripped = text.replace(/^#[ \t]\[\][ \t]*(?:#.*)?\r?\n/gmu, '').trim()
-  if (stripped === '') return '# Your patch layer for this dsh profile.\n[]\n'
-  return text
+  const withoutPlaceholderComment = text.replace(/^#[ \t]\[\][ \t]*(?:#.*)?\r?\n/gmu, '')
+  const hasEntries = withoutPlaceholderComment
+    .split(/\r?\n/)
+    .some((line) => { const t = line.trim(); return t !== '' && !t.startsWith('#') })
+  if (hasEntries) return text
+  const base = withoutPlaceholderComment === '' || withoutPlaceholderComment.endsWith('\n')
+    ? withoutPlaceholderComment
+    : withoutPlaceholderComment + '\n'
+  return base + '[]\n'
 }
