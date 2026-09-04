@@ -90,6 +90,7 @@
   .badge.tag { color: var(--accent); border-color: var(--accent); }
   .badge.latest { color: var(--ok); border-color: var(--ok); }
   .badge.cur { color: var(--warn); border-color: var(--warn); }
+  .vrow button.act { min-width: 88px; }
   .prow { display: flex; align-items: center; gap: 8px; padding: 6px 4px;
           border-bottom: 1px solid var(--line); font-size: 13px; }
   .prow:last-child { border-bottom: none; }
@@ -349,14 +350,28 @@
     log.scrollTop = log.scrollHeight
   }
 
+  // 回退切换两段式确认（覆盖安装/重新构建属于重操作）：首次点击进入待确认态
+  //（警告色「确认切换？」），5 秒内再点才执行，超时自动复位；升级无需确认。
+  function disarmSwitch(btn) {
+    btn.dataset.armed = ''
+    btn.textContent = '切换'
+    btn.style.color = ''
+    btn.style.borderColor = ''
+  }
+
   async function switchTo(v, btn) {
     if (switching) return
-    if (v.isOlder) {
-      const msg = versionSource === 'git-local'
-        ? '将回退到 dsh ' + v.version + '（源码源需重新构建，约 1-3 分钟）。继续吗？'
-        : '将回退到 dsh ' + v.version + '（npm 全局安装会被覆盖，桌面壳会自动完成安装与重启）。继续吗？'
-      if (!window.confirm(msg)) return
+    if (v.isOlder && btn.dataset.armed !== '1') {
+      btn.dataset.armed = '1'
+      btn.textContent = '确认切换？'
+      btn.style.color = 'var(--bad)'
+      btn.style.borderColor = 'var(--bad)'
+      if (btn._armTimer) clearTimeout(btn._armTimer)
+      btn._armTimer = setTimeout(() => { disarmSwitch(btn) }, 5000)
+      return
     }
+    if (btn._armTimer) clearTimeout(btn._armTimer)
+    disarmSwitch(btn)
     switching = true
     btn.disabled = true
     btn.textContent = '切换中…'
