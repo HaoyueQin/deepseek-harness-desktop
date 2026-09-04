@@ -387,6 +387,19 @@
 
   // ---- 插件救火区 ----
   let pluginBusy = false
+  let lastPluginList = null
+  let latestVersions = {}
+  let latestLoaded = false
+
+  function pluginDesc(p) {
+    const state = p.system ? '系统组件' : p.official ? '官方内置' : p.disabled ? '已禁用' : p.inBundles ? '生效中' : '未启用'
+    if (p.system || p.official || p.version === null) return state
+    let text = state + ' · v' + p.version
+    const latest = latestVersions[p.name]
+    if (latest !== undefined && latest !== p.version) text += ' → v' + latest + '（可更新）'
+    else if (latestLoaded && latest === undefined) text += '（已是最新）'
+    return text
+  }
 
   function pluginRow(p) {
     const row = document.createElement('div')
@@ -397,7 +410,7 @@
     row.appendChild(name)
     const desc = document.createElement('span')
     desc.className = 'pdesc'
-    desc.textContent = p.system ? '系统组件' : p.official ? '官方内置' : p.disabled ? '已禁用' : p.inBundles ? '生效中' : '未启用'
+    desc.textContent = pluginDesc(p)
     row.appendChild(desc)
     const mkBtn = (label, fn) => {
       const b = document.createElement('button')
@@ -425,7 +438,14 @@
 
   async function loadPlugins() {
     $('btnRefreshPlugins').disabled = true
-    try { renderPluginList(await bridge.plugins.list()) }
+    try {
+      lastPluginList = await bridge.plugins.list()
+      renderPluginList(lastPluginList)
+      // 异步补最新版本（pnpm outdated，失败/超时主进程返回空表 → 只显示当前版本）
+      latestVersions = await bridge.plugins.outdated()
+      latestLoaded = true
+      if (lastPluginList !== null) renderPluginList(lastPluginList)
+    }
     catch (e) { $('plugin-list').textContent = '插件清单获取失败：' + String(e) }
     finally { $('btnRefreshPlugins').disabled = false }
   }
