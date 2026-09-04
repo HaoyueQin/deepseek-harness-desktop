@@ -766,7 +766,10 @@ function registerRecoveryIpc(): void {
     }
   })
   ipcMain.handle('recovery:open-log-file', async () => {
-    const err = await shell.openPath(join(app.getPath('userData'), 'logs'))
+    const dir = join(app.getPath('userData'), 'logs')
+    // dev 下日志走 stdout、目录可能从未创建：先确保存在，否则 openPath 静默失败
+    try { mkdirSync(dir, { recursive: true }) } catch { /* 打开失败仍会返回错误 */ }
+    const err = await shell.openPath(dir)
     return err === '' ? { ok: true } : { ok: false, error: err }
   })
   ipcMain.handle('recovery:copy-diagnosis', () => {

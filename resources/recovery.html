@@ -233,7 +233,14 @@
     }
     // 成功时主进程已切回 dsh 页面，本页随之销毁
   }
-  $('btnLog').onclick = () => bridge.recovery.openLogFile()
+  $('btnLog').onclick = async () => {
+    try {
+      const r = await bridge.recovery.openLogFile()
+      if (r.ok !== true) alert('无法打开日志目录：' + (r.error ?? '未知原因'))
+    } catch (e) {
+      alert('无法打开日志目录：' + String(e))
+    }
+  }
   $('btnCopy').onclick = async () => {
     const r = await bridge.recovery.copyDiagnosis()
     if (r.ok === true) {
