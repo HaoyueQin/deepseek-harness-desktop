@@ -11,6 +11,10 @@ export type FailureDiagnosis =
   | { kind: 'unknown' }
 
 const PLUGIN_LINE = /plugin\(s\) failed to load:\s*([^;\r\n]+);/
+// dsh 0.1.2-rc.1 实测的 import 阶段形态（fail-loud 链路变体）：
+// "plugin tree failed to load: failed to apply loader entry include (cordis:include):
+//  failed to import loader entry <名> (<名>): <原因>"
+const IMPORT_ENTRY = /failed to import loader entry ([\w@./-]+)/
 
 /** 从崩溃输出提取失败原因；识别不出返回 unknown。 */
 export function parseFailure(text: string): FailureDiagnosis {
@@ -19,6 +23,8 @@ export function parseFailure(text: string): FailureDiagnosis {
     const plugins = m[1].split(',').map((s) => s.trim()).filter((s) => s !== '')
     if (plugins.length > 0) return { kind: 'plugin-load-failure', plugins }
   }
+  const imp = IMPORT_ENTRY.exec(text)
+  if (imp !== null) return { kind: 'plugin-load-failure', plugins: [imp[1]] }
   if (/EADDRINUSE|address already in use/i.test(text)) return { kind: 'port-conflict' }
   return { kind: 'unknown' }
 }
