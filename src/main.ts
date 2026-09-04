@@ -69,6 +69,8 @@ let backendNotice: string | null = null
 let dshPortActual: number | null = null
 /** 本次是否因配置的固定端口被占而降级随机（页面 localStorage 侧设置本次不保留）。 */
 let dshPortDegraded = false
+/** 版本切换（dsh-backend:install-version）进行中标志：与 sourceBusy/isSourceUpdating 互斥。 */
+let versionBusy = false
 
 /**
  * 组装恢复上下文：快照脱敏 + 解析诊断（handover §7.3 数据流）。
@@ -228,6 +230,34 @@ function registerAppIpc(): void {
       return updateSource()
     }
     return updateBackend()
+  })
+  // 版本清单（恢复页版本区数据源）：按生效来源分发；失败返回 error 字段由页面重试
+  ipcMain.handle('dsh-backend:versions', async () => {
+    if (locatedDsh === null) return { source: null, current: '', versions: [] }
+    try {
+      if (locatedDsh.source === 'git-local') {
+        return { source: 'git-local', current: locatedDsh.version, versions: await listSourceVersions() }
+      }
+      const { versions, distTags } = await fetchNpmVersions()
+      return { source: 'npm-global', current: locatedDsh.version, versions: listNpmVersions(versions, distTags, locatedDsh.version) }
+    } catch (err) {
+      log(`dsh-backend:versions 失败 ${String(err)}`)
+      return { source: locatedDsh.source, current: locatedDsh.version, versions: [], error: String(err) }
+    }
+  })
+  // 切换任意版本（升级/回退统一）：安装成功自动重启后端并 loadURL 回 dsh 页
+  ipcMain.handle('dsh-backend:install-version', async (_event, target: unknown) => {
+    if (typeof target !== 'string' || target === '') return { ok: false, error: 'invalid' }
+    if (versionBusy || sourceBusy || isSourceUpdating()) return { ok: false, busy: true }
+    versionBusy = true
+    try {
+      const s = locatedDsh?.source === 'git-local'
+        ? await installSourceVersion(target)
+        : await installBackendVersion(target)
+      return s.stage === 'done' ? { ok: true } : { ok: false, error: s.error ?? '切换失败' }
+    } finally {
+      versionBusy = false
+    }
   })
   // 后端来源配置：读取（含源码目录校验结果）/保存/选目录/重启生效
   ipcMain.handle('dsh-backend:get-config', () => {
@@ -891,8 +921,11 @@ function main(): void {
     // 桌壳更新状态实时推给设置页（两段式 UI：发现新版/下载中/可安装；后台
     // 15s 自动检查发现的版本同样经此到达页面，但下载始终由用户按钮触发）
     onUpdateStatus((s) => { win?.webContents.send('dsh-update:status', s) })
-    // 源码管线的实时日志（下载更新/克隆/准备环境共用）转发给设置页日志区
-    setSourceLogSink((line) => { if (!quitting) win?.webContents.send('dsh-source:log', line) })
+    // 源码管线的实时日志（下载更新/克隆/准备环境共用）转发给设置页日志区 +
+    // 恢复页版本区（recovery:log 聚合通道，两个页面可同时订阅）
+    setSourceLogSink((line) => { if (!quitting) { win?.webContents.send('dsh-source:log', line); win?.webContents.send('recovery:log', line) } })
+    // npm 侧版本切换的实时日志（M2 新增）
+    setBackendLogSink((line) => { if (!quitting) win?.webContents.send('recovery:log', line) })
     setSourceUpdateHooks({
       restartBackend: restartEffectiveBackend,
       stopBackend: async () => { if (dsh !== null) { await dsh.stop(); dsh = null } },

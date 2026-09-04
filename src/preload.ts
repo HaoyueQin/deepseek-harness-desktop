@@ -71,6 +71,15 @@ contextBridge.exposeInMainWorld('dshDesktop', {
       ipcRenderer.on('dsh-backend:notice', handler)
       return () => ipcRenderer.removeListener('dsh-backend:notice', handler)
     },
+    // 版本清单 / 切换任意版本 / 实时日志（恢复页版本区）
+    listVersions: (): Promise<unknown> => ipcRenderer.invoke('dsh-backend:versions'),
+    installVersion: (target: string): Promise<{ ok: boolean; busy?: boolean; error?: string }> =>
+      ipcRenderer.invoke('dsh-backend:install-version', target),
+    onVersionLog: (cb: (t: string) => void): (() => void) => {
+      const handler = (_event: unknown, t: string): void => cb(t)
+      ipcRenderer.on('recovery:log', handler)
+      return () => ipcRenderer.removeListener('recovery:log', handler)
+    },
   },
   setup: {
     copyCommand: (): Promise<boolean> => ipcRenderer.invoke('dsh-setup:copy-command'),

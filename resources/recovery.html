@@ -6,10 +6,39 @@
 <style>
   /* 深色主题与壳一致（LOADING_HTML/SETUP_HTML 同款基色）。刻意不含 #root
      元素：标题栏注入（src/titlebar.ts）以 #root 缺失跳过本页，拖拽条自备。 */
+  /* 双主题：默认浅色（参照 dsh design-platform.css 浅色基调：bg 白、
+     bluish-100 #ebeef2 附近）；@media 跟随系统深色；显式 [data-theme] 覆盖
+     （ui-theme.preference=light/dark 时由 JS 设置）。配色尽力贴近 dsh token，
+     不复刻——见交接文档 §3 2026-09-05。 */
   :root {
+    --bg: #ffffff; --panel: #f0f2f5; --line: #dfe3e8; --text: #1b1b1c;
+    --muted: #4a5568; --faint: #8a93a5; --accent: #2e7cd6; --brand: #4176E6;
+    --warn: #a97a15; --bad: #c94f3d; --ok: #3f9053;
+    --chip-bg: #f9e9e9; --chip-border: #e5bfb8; --chip-text: #a03226;
+    --mono: #4a5568; --ghost-border: #b9c2cc;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1a1a; --panel: #111; --line: #333; --text: #e8e8e8;
+      --muted: #aab3c0; --faint: #6b7686; --accent: #4d9fff; --brand: #4176E6;
+      --warn: #e6b441; --bad: #e66d5a; --ok: #58b368;
+      --chip-bg: #24161a; --chip-border: #5a3a42; --chip-text: #f0a898;
+      --mono: #9aa4b2; --ghost-border: #444;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #ffffff; --panel: #f0f2f5; --line: #dfe3e8; --text: #1b1b1c;
+    --muted: #4a5568; --faint: #8a93a5; --accent: #2e7cd6; --brand: #4176E6;
+    --warn: #a97a15; --bad: #c94f3d; --ok: #3f9053;
+    --chip-bg: #f9e9e9; --chip-border: #e5bfb8; --chip-text: #a03226;
+    --mono: #4a5568; --ghost-border: #b9c2cc;
+  }
+  :root[data-theme="dark"] {
     --bg: #1a1a1a; --panel: #111; --line: #333; --text: #e8e8e8;
     --muted: #aab3c0; --faint: #6b7686; --accent: #4d9fff; --brand: #4176E6;
     --warn: #e6b441; --bad: #e66d5a; --ok: #58b368;
+    --chip-bg: #24161a; --chip-border: #5a3a42; --chip-text: #f0a898;
+    --mono: #9aa4b2; --ghost-border: #444;
   }
   * { box-sizing: border-box; }
   body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
@@ -36,21 +65,31 @@
   .badge.bad { color: var(--bad); border-color: var(--bad); }
   .badge.warn { color: var(--warn); border-color: var(--warn); }
   .chip { display: inline-block; padding: 2px 10px; margin: 2px 4px 2px 0; border-radius: 6px;
-          background: #24161a; border: 1px solid #5a3a42; color: #f0a898;
+          background: var(--chip-bg); border: 1px solid var(--chip-border); color: var(--chip-text);
           font-family: Consolas, monospace; font-size: 12px; }
   .label { color: var(--faint); font-size: 12px; }
   .diag-title { font-size: 15px; margin: 2px 0 6px; }
   p { color: var(--muted); margin: 8px 0; }
   pre { background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
         padding: 12px; margin: 8px 0 0; white-space: pre-wrap; word-break: break-all;
-        font-size: 12px; color: #9aa4b2; max-height: 260px; overflow-y: auto; }
+        font-size: 12px; color: var(--mono); max-height: 260px; overflow-y: auto; }
   button.act { border: none; border-radius: 6px; padding: 9px 18px; cursor: pointer;
                font-size: 13px; background: var(--brand); color: #fff; }
   button.act:disabled { opacity: .5; cursor: default; }
-  button.ghost { background: transparent; border: 1px solid #444; color: var(--text); }
+  button.ghost { background: transparent; border: 1px solid var(--ghost-border); color: var(--text); }
+  button.ghost:hover { border-color: var(--accent); }
   button.ghost:hover { border-color: var(--accent); }
   .primary { font-size: 14px; padding: 11px 22px; }
   .hint { font-size: 12px; color: var(--faint); }
+  .version-list { margin: 4px 0; }
+  .vrow { display: flex; align-items: center; gap: 8px; padding: 5px 4px;
+          border-bottom: 1px solid var(--line); font-size: 13px; }
+  .vrow:last-child { border-bottom: none; }
+  .vrow .vname { font-family: Consolas, monospace; color: var(--text); }
+  .vrow .vdesc { color: var(--faint); font-size: 12px; flex: 1; }
+  .badge.tag { color: var(--accent); border-color: var(--accent); }
+  .badge.latest { color: var(--ok); border-color: var(--ok); }
+  .badge.cur { color: var(--warn); border-color: var(--warn); }
 </style>
 </head>
 <body>
@@ -75,6 +114,16 @@
     <div id="diag" class="diag-title">正在读取诊断…</div>
     <div id="plugins" class="row"></div>
     <p id="advice" class="hint"></p>
+  </div>
+
+  <div class="card">
+    <div class="row" style="justify-content: space-between">
+      <span class="label">dsh 版本（升级 / 回退）</span>
+      <button class="act ghost" id="btnRefreshVersions" style="padding: 3px 12px; font-size: 12px">刷新</button>
+    </div>
+    <div id="version-list" class="version-list"><span class="hint">正在加载版本清单…</span></div>
+    <pre id="version-log" style="display: none"></pre>
+    <p class="hint">切换到低于当前版本属于回退：npm 源会全局覆盖安装；源码源需重新构建（约 1-3 分钟）。</p>
   </div>
 
   <div class="card">
@@ -166,16 +215,133 @@
     }
   }
 
+  // ---- 版本区（恢复页所有上下文共享：crashed/boot-failed/maintenance） ----
+  let versionSource = null
+  let versionLogListening = false
+  let switching = false
+
+  function versionRow(v) {
+    const row = document.createElement('div')
+    row.className = 'vrow'
+    const name = document.createElement('span')
+    name.className = 'vname'
+    name.textContent = v.version
+    row.appendChild(name)
+    if (v.isCurrent) {
+      const cur = document.createElement('span')
+      cur.className = 'badge cur'
+      cur.textContent = '当前'
+      row.appendChild(cur)
+    }
+    for (const tag of v.tags) {
+      const b = document.createElement('span')
+      b.className = 'badge ' + (tag === 'latest' ? 'latest' : 'tag')
+      b.textContent = tag
+      row.appendChild(b)
+    }
+    const desc = document.createElement('span')
+    desc.className = 'vdesc'
+    desc.textContent = v.isCurrent ? '当前生效版本' : v.isOlder ? (versionSource === 'git-local' ? '旧版本 · 需重新构建（分钟级）' : '旧版本 · 回退（全局覆盖）') : '新版本 · 升级'
+    row.appendChild(desc)
+    if (!v.isCurrent) {
+      const btn = document.createElement('button')
+      btn.className = 'act ghost'
+      btn.style.padding = '3px 12px'
+      btn.style.fontSize = '12px'
+      btn.textContent = '切换'
+      btn.onclick = () => switchTo(v, btn)
+      row.appendChild(btn)
+    }
+    return row
+  }
+
+  function renderVersionList(s) {
+    const list = $('version-list')
+    list.textContent = ''
+    if (s.error !== undefined && s.error !== null) {
+      list.textContent = '版本清单获取失败：' + s.error
+      return
+    }
+    if (s.versions.length === 0) {
+      list.textContent = '暂无可用版本信息'
+      return
+    }
+    versionSource = s.source
+    for (const v of s.versions) list.appendChild(versionRow(v))
+  }
+
+  async function loadVersions() {
+    $('btnRefreshVersions').disabled = true
+    try {
+      renderVersionList(await bridge.backend.listVersions())
+    } catch (e) {
+      $('version-list').textContent = '版本清单获取失败：' + String(e)
+    } finally {
+      $('btnRefreshVersions').disabled = false
+    }
+  }
+  $('btnRefreshVersions').onclick = () => { void loadVersions() }
+
+  function pushVersionLog(t) {
+    const log = $('version-log')
+    log.style.display = 'block'
+    log.textContent += t
+    log.scrollTop = log.scrollHeight
+  }
+
+  async function switchTo(v, btn) {
+    if (switching) return
+    if (v.isOlder) {
+      const msg = versionSource === 'git-local'
+        ? '将回退到 dsh ' + v.version + '（源码源需重新构建，约 1-3 分钟）。继续吗？'
+        : '将回退到 dsh ' + v.version + '（npm 全局安装会被覆盖，桌面壳会自动完成安装与重启）。继续吗？'
+      if (!window.confirm(msg)) return
+    }
+    switching = true
+    btn.disabled = true
+    btn.textContent = '切换中…'
+    if (!versionLogListening) {
+      versionLogListening = true
+      bridge.backend.onVersionLog(pushVersionLog)
+    }
+    pushVersionLog('\n[shell] 开始切换到 ' + v.version + '…\n')
+    try {
+      const r = await bridge.backend.installVersion(v.version)
+      if (r.ok === true) return // 主进程将自动重启后端并 loadURL 回 dsh 页
+      pushVersionLog('[shell] ✗ 切换失败: ' + (r.error !== undefined && r.error !== null ? r.error : '未知原因') + '\n')
+      alert('切换失败：' + (r.error !== undefined && r.error !== null ? r.error : '未知原因'))
+    } catch (e) {
+      pushVersionLog('[shell] ✗ 切换异常: ' + String(e) + '\n')
+      alert('切换异常：' + String(e))
+    } finally {
+      switching = false
+      btn.disabled = false
+      btn.textContent = '切换'
+    }
+  }
+
+  async function applyTheme() {
+    // 主题匹配：dsh ui-theme.preference（dark/light）→ 显式 data-theme；
+    // system/缺失/读取失败 → 不设 data-theme，CSS 媒体查询实时跟随系统。
+    let t = null
+    try { t = await bridge.recovery.getTheme() } catch (e) { /* 桥失败：纯 CSS 降级 */ }
+    const pref = t === null ? null : t.preference
+    if (pref === 'light' || pref === 'dark') document.documentElement.dataset.theme = pref
+  }
+
   async function render() {
+    await applyTheme()
     const s = await bridge.recovery.getState()
     if (s === null) {
       $('badge').textContent = '恢复中心'
       $('diag').textContent = '当前无恢复上下文（手动进入的维护模式）。'
       $('meta').textContent = ''
+      void loadVersions() // 维护模式无诊断上下文，版本区仍可用
       return
     }
     renderDiag(s)
     $('snap').textContent = s.outputTail !== '' ? s.outputTail : '（无输出）'
+    void loadVersions() // 版本区随诊断渲染加载（与 get-state 并行，不阻塞主渲染）
   }
   render().catch((e) => { $('diag').textContent = '渲染失败: ' + String(e) })
 </script>
