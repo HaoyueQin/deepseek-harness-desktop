@@ -269,6 +269,12 @@
     return row
   }
 
+  // 版本列表折叠：大概率只会用最近几个，其余默认折叠、点击展开（用户反馈）。
+  // 展开状态跨「刷新」保留；刷新后按当前状态重渲染。
+  let versionsExpanded = false
+  let lastVersionsState = null
+  const VERSIONS_VISIBLE = 5
+
   function renderVersionList(s) {
     const list = $('version-list')
     list.textContent = ''
@@ -281,7 +287,23 @@
       return
     }
     versionSource = s.source
-    for (const v of s.versions) list.appendChild(versionRow(v))
+    lastVersionsState = s
+    const visible = versionsExpanded ? s.versions : s.versions.slice(0, VERSIONS_VISIBLE)
+    for (const v of visible) list.appendChild(versionRow(v))
+    if (s.versions.length > VERSIONS_VISIBLE) {
+      const toggle = document.createElement('button')
+      toggle.className = 'act ghost'
+      toggle.style.marginTop = '6px'
+      toggle.style.fontSize = '12px'
+      toggle.textContent = versionsExpanded
+        ? '收起旧版本'
+        : '展开其余 ' + (s.versions.length - VERSIONS_VISIBLE) + ' 个版本'
+      toggle.onclick = () => {
+        versionsExpanded = !versionsExpanded
+        renderVersionList(lastVersionsState)
+      }
+      list.appendChild(toggle)
+    }
   }
 
   async function loadVersions() {
