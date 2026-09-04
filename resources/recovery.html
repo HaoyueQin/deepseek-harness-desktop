@@ -138,7 +138,6 @@
       <button class="act ghost" id="btnRefreshPlugins" style="padding: 3px 12px; font-size: 12px">刷新</button>
     </div>
     <div id="plugin-list" class="version-list"><span class="hint">正在加载插件清单…</span></div>
-    <p class="hint">日常插件管理（安装/升级/备份/诊断）建议在 dsh 正常时用设置页的插件市场（dsh-market）。</p>
   </div>
 
   <div class="card">
@@ -445,8 +444,24 @@
       void loadPlugins() // 插件救火区随诊断渲染加载
       return
     }
-    renderDiag(s)
-    $('snap').textContent = s.outputTail !== '' ? s.outputTail : '（无输出）'
+    if (s.kind === 'maintenance') {
+      // 维护模式（设置页更新交接等）：无异常观感——中性引导文案、隐藏快照卡，
+      // 避免用户把正常操作误读为故障诊断。
+      const badge = $('badge')
+      badge.textContent = KIND_TEXT.maintenance
+      badge.className = 'badge'
+      $('diag').textContent = s.purpose === 'update'
+        ? '正在切换 dsh 版本，进度见下方日志；完成后桌面壳会自动重启并返回正常模式。'
+        : '版本切换与插件维护在这里进行，桌面壳会自动完成并重启返回。'
+      $('meta').textContent =
+        'dsh ' + s.dshVersion + (s.dshSource === 'git-local' ? '（源码构建）' : s.dshSource === 'npm-global' ? '（npm 全局）' : '')
+      $('advice').textContent = ''
+      $('snap').closest('.card').style.display = 'none'
+    } else {
+      renderDiag(s)
+      $('snap').closest('.card').style.display = ''
+      $('snap').textContent = s.outputTail !== '' ? s.outputTail : '（无输出）'
+    }
     void loadVersions() // 版本区随诊断渲染加载（与 get-state 并行，不阻塞主渲染）
     void loadPlugins() // 插件救火区随诊断渲染加载
   }
