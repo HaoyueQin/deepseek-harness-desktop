@@ -90,6 +90,12 @@
   .badge.tag { color: var(--accent); border-color: var(--accent); }
   .badge.latest { color: var(--ok); border-color: var(--ok); }
   .badge.cur { color: var(--warn); border-color: var(--warn); }
+  .prow { display: flex; align-items: center; gap: 8px; padding: 6px 4px;
+          border-bottom: 1px solid var(--line); font-size: 13px; }
+  .prow:last-child { border-bottom: none; }
+  .prow .pname { font-family: Consolas, monospace; color: var(--text); flex: 1; }
+  .prow .pdesc { color: var(--faint); font-size: 12px; }
+  .prow button.act { padding: 3px 12px; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -124,6 +130,15 @@
     <div id="version-list" class="version-list"><span class="hint">正在加载版本清单…</span></div>
     <pre id="version-log" style="display: none"></pre>
     <p class="hint">切换到低于当前版本属于回退：npm 源会全局覆盖安装；源码源需重新构建（约 1-3 分钟）。</p>
+  </div>
+
+  <div class="card">
+    <div class="row" style="justify-content: space-between">
+      <span class="label">插件救火区（先禁用，禁用无效再卸载/更新）</span>
+      <button class="act ghost" id="btnRefreshPlugins" style="padding: 3px 12px; font-size: 12px">刷新</button>
+    </div>
+    <div id="plugin-list" class="version-list"><span class="hint">正在加载插件清单…</span></div>
+    <p class="hint">日常插件管理（安装/升级/备份/诊断）建议在 dsh 正常时用设置页的插件市场（dsh-market）。</p>
   </div>
 
   <div class="card">
@@ -320,6 +335,96 @@
     }
   }
 
+  // ---- 插件救火区 ----
+  let pluginBusy = false
+
+  function pluginRow(p) {
+    const row = document.createElement('div')
+    row.className = 'prow'
+    const name = document.createElement('span')
+    name.className = 'pname'
+    name.textContent = p.name
+    row.appendChild(name)
+    const desc = document.createElement('span')
+    desc.className = 'pdesc'
+    desc.textContent = p.system ? '系统组件' : p.official ? '官方内置' : p.disabled ? '已禁用' : p.inBundles ? '生效中' : '未启用'
+    row.appendChild(desc)
+    const mkBtn = (label, fn) => {
+      const b = document.createElement('button')
+      b.className = 'act ghost'
+      b.textContent = label
+      b.onclick = () => fn(b)
+      row.appendChild(b)
+    }
+    if (p.disabled) mkBtn('启用', (b) => togglePlugin(p, b, true))
+    else if (!p.system && !p.official && !p.protected) mkBtn('禁用', (b) => togglePlugin(p, b, false))
+    if (!p.system && !p.official) {
+      mkBtn('卸载', (b) => cliPlugin(p, b, 'remove'))
+      mkBtn('更新', (b) => cliPlugin(p, b, 'update'))
+    }
+    return row
+  }
+
+  function renderPluginList(ps) {
+    const list = $('plugin-list')
+    list.textContent = ''
+    if (ps.length === 0) { list.textContent = '未安装第三方插件'; return }
+    for (const p of ps) list.appendChild(pluginRow(p))
+  }
+
+  async function loadPlugins() {
+    $('btnRefreshPlugins').disabled = true
+    try { renderPluginList(await bridge.plugins.list()) }
+    catch (e) { $('plugin-list').textContent = '插件清单获取失败：' + String(e) }
+    finally { $('btnRefreshPlugins').disabled = false }
+  }
+  $('btnRefreshPlugins').onclick = () => { void loadPlugins() }
+
+  async function togglePlugin(p, btn, enable) {
+    if (pluginBusy) return
+    const label = enable ? '启用' : '禁用'
+    if (!enable && !window.confirm('禁用插件 ' + p.name + '？该插件将不再加载（可随时重新启用）。')) return
+    pluginBusy = true
+    btn.disabled = true
+    btn.textContent = label + '中…'
+    try {
+      const r = enable ? await bridge.plugins.enable(p.name) : await bridge.plugins.disable(p.name)
+      if (r.ok !== true) { alert(label + '失败：' + (r.reason ?? '未知原因')); return }
+      await loadPlugins()
+      alert('已' + label + '，点「重启 dsh 并返回」生效' + (r.applied.length > 0 ? '（行：' + r.applied.join('、') + '）' : ''))
+    } finally {
+      pluginBusy = false
+      btn.disabled = false
+      btn.textContent = label
+    }
+  }
+
+  async function cliPlugin(p, btn, action) {
+    if (pluginBusy) return
+    const label = action === 'remove' ? '卸载' : '更新'
+    const desc = action === 'remove'
+      ? '将卸载插件 ' + p.name + '（从 profile 移除）。'
+      : '将更新插件 ' + p.name + '（检查并安装最新兼容版本）。'
+    if (!window.confirm(label + '插件 ' + p.name + '？' + desc)) return
+    pluginBusy = true
+    btn.disabled = true
+    btn.textContent = label + '中…'
+    pushVersionLog('\n[shell] 开始' + label + ' ' + p.name + '…\n')
+    try {
+      const r = await bridge.plugins[action](p.name)
+      if (r.ok === true) return // 主进程完成时已重启后端并切回 dsh 页
+      pushVersionLog('[shell] ✗ ' + label + '失败: ' + (r.error ?? '未知原因') + '\n')
+      alert(label + '失败：' + (r.error ?? '未知原因'))
+    } catch (e) {
+      pushVersionLog('[shell] ✗ ' + label + '异常: ' + String(e) + '\n')
+      alert(label + '异常：' + String(e))
+    } finally {
+      pluginBusy = false
+      btn.disabled = false
+      btn.textContent = label
+    }
+  }
+
   async function applyTheme() {
     // 主题匹配：dsh ui-theme.preference（dark/light）→ 显式 data-theme；
     // system/缺失/读取失败 → 不设 data-theme，CSS 媒体查询实时跟随系统。
@@ -337,11 +442,13 @@
       $('diag').textContent = '当前无恢复上下文（手动进入的维护模式）。'
       $('meta').textContent = ''
       void loadVersions() // 维护模式无诊断上下文，版本区仍可用
+      void loadPlugins() // 插件救火区随诊断渲染加载
       return
     }
     renderDiag(s)
     $('snap').textContent = s.outputTail !== '' ? s.outputTail : '（无输出）'
     void loadVersions() // 版本区随诊断渲染加载（与 get-state 并行，不阻塞主渲染）
+    void loadPlugins() // 插件救火区随诊断渲染加载
   }
   render().catch((e) => { $('diag').textContent = '渲染失败: ' + String(e) })
 </script>
