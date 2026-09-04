@@ -15,7 +15,7 @@
     "build:runtime": "node scripts/install-runtime.mjs",
     "smoke": "node scripts/smoke.mjs",
     "test:home": "npm run build && node scripts/home-resolution.test.mjs",
-    "test:recovery": "npm run build && node scripts/recovery-ring-buffer.test.mjs && node scripts/recovery-parse-failure.test.mjs && node scripts/recovery-state.test.mjs && node scripts/recovery-theme.test.mjs && node scripts/recovery-versions.test.mjs && node scripts/recovery-patch.test.mjs && node scripts/recovery-plugins.test.mjs",
+    "test:recovery": "npm run build && node scripts/recovery-ring-buffer.test.mjs && node scripts/recovery-parse-failure.test.mjs && node scripts/recovery-state.test.mjs && node scripts/recovery-ipc-guard.test.mjs && node scripts/recovery-theme.test.mjs && node scripts/recovery-versions.test.mjs && node scripts/recovery-patch.test.mjs && node scripts/recovery-plugins.test.mjs",
     "dist:win": "npm run build && electron-builder --win",
     "dist:mac": "npm run build && electron-builder --mac",
     "dist:linux": "npm run build && electron-builder --linux"

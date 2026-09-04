@@ -24,6 +24,15 @@ const rows = parsePatchRows([
 assert.deepEqual(rows.insertedIds, ['demo-main', 'attachment-local'])
 assert.deepEqual(rows.ids, ['demo-main', 'attachment-local', 'attachment-local'])
 
+// --- parsePatchRows：insert 块止于任何缩退行（中间兄弟键不延长子块） ---
+{
+  const rows2 = parsePatchRows([
+    '- insert:', '    - id: a1', '      name: x',
+    '- reconfig:', '    id: other-row',
+  ].join('\n'))
+  assert.deepEqual(rows2.insertedIds, ['a1'], '缩退后的 reconfig 嵌套 id 不得算进 insertedIds')
+}
+
 // --- bundlePatchInsertedIds：声明文件与包根 ---
 writeFileSync(join(profileDir, 'node_modules', 'demo-plugin', 'package.json'), JSON.stringify({
   version: '1.0.0', dsh: { bundle: { patch: './bundle.yml' } },
@@ -47,6 +56,21 @@ const state = readUserPatchState(patchPath)
 assert.deepEqual(state.disables, ['demo-main'])
 assert.deepEqual(state.forced, ['demo-extra'])
 assert.deepEqual(state.inserts, ['a'])
+
+// --- readUserPatchState：手工行格式容错（任意缩进/注释尾；嵌套键不误判） ---
+{
+  const p = join(profileDir, 'manual.yml')
+  writeFileSync(p, [
+    '- id: m-1', '    disabled: true',
+    '- id: m-2', '  disabled: false  # 用户备注',
+    '- id: m-3', '  config:', '    disabled: true',
+  ].join('\n') + '\n', 'utf8')
+  const s = readUserPatchState(p)
+  assert.deepEqual(s.disables, ['m-1'], '4 空格缩进的 disabled 行应识别')
+  assert.deepEqual(s.forced, ['m-2'], '注释尾的 disabled: false 应识别')
+  assert.equal(s.disables.includes('m-3'), false, '嵌套 config.disabled 不得误判为行禁用')
+  assert.equal(s.forced.includes('m-3'), false)
+}
 
 // --- disableRow：追加、幂等 ---
 {

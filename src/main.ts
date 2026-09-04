@@ -6,7 +6,7 @@
  * 自家子进程 stdout 解析，无外部输入进入 webPreferences。
  */
 
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell } from 'electron'
 import { startDsh, isTcpPortFree, type DshControl } from './dsh/spawn.js'
 import { createTray, syncTrayAutostart, type TrayHandlers } from './tray.js'
 import { dshHomeDir, iconPath, preloadPath, recoveryPagePath, resourcesDir } from './paths.js'
@@ -37,12 +37,14 @@ import { enterRecovery, getRecoveryContext, clearRecoveryContext } from './recov
 import { parseFailure, sanitizeLog } from './recovery/parse-failure.js'
 import { disablePlugin, enablePlugin, isImmutablePlugin, isValidPluginName, listPlugins, parseOutdatedJson, pluginCliArgs } from './recovery/plugins.js'
 import { parseThemePreference } from './recovery/theme.js'
+import { ipcSenderKind } from './recovery/ipc-guard.js'
 // electron-updater 的 update-downloaded 事件带 downloadedFile（本地完整路径），
 // UpdateInfo.path 只是 latest.yml 里的相对文件名，spawn 会 ENOENT。
 import type { UpdateDownloadedEvent } from 'electron-updater'
 import { join } from 'node:path'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync } from 'node:fs'
 import { spawn, type ChildProcess } from 'node:child_process'
+import { killTree } from './kill-tree.js'
 import { desktopPluginDir } from './paths.js'
 import { log } from './log.js'
 import { INJECT_TITLEBAR } from './titlebar.js'
@@ -100,6 +102,16 @@ function buildRecoveryContext(
 async function showRecoveryPage(): Promise<void> {
   showWindow()
   await win?.loadFile(recoveryPagePath())
+}
+
+type IpcEventLike = { senderFrame?: { url?: string } | null }
+/** 恢复面通道守卫：只允许壳原生恢复页（file://…/recovery.html）发起。 */
+function fromRecoveryPage(event: IpcEventLike): boolean {
+  return ipcSenderKind(event.senderFrame?.url) === 'recovery'
+}
+/** dsh 页面通道守卫：设置页更新交接（open-update）与手动入口（open）。 */
+function fromDshPage(event: IpcEventLike): boolean {
+  return ipcSenderKind(event.senderFrame?.url) === 'dsh-page'
 }
 
 /**
@@ -237,7 +249,8 @@ function registerAppIpc(): void {
     return updateBackend()
   })
   // 版本清单（恢复页版本区数据源）：按生效来源分发；失败返回 error 字段由页面重试
-  ipcMain.handle('dsh-backend:versions', async () => {
+  ipcMain.handle('dsh-backend:versions', async (event) => {
+    if (!fromRecoveryPage(event)) return { source: null, current: '', versions: [], error: 'forbidden' }
     if (locatedDsh === null) return { source: null, current: '', versions: [] }
     try {
       if (locatedDsh.source === 'git-local') {
@@ -251,7 +264,8 @@ function registerAppIpc(): void {
     }
   })
   // 切换任意版本（升级/回退统一）：安装成功自动重启后端并 loadURL 回 dsh 页
-  ipcMain.handle('dsh-backend:install-version', async (_event, target: unknown) => {
+  ipcMain.handle('dsh-backend:install-version', async (event, target: unknown) => {
+    if (!fromRecoveryPage(event)) return { ok: false, error: 'forbidden' }
     if (typeof target !== 'string' || target === '') return { ok: false, error: 'invalid' }
     if (versionBusy || pluginsBusy || sourceBusy || isSourceUpdating()) return { ok: false, busy: true }
     versionBusy = true
@@ -265,12 +279,15 @@ function registerAppIpc(): void {
     }
   })
   // 插件救火区：清单/禁用/启用（纯文件，dsh 崩溃态可用）
-  ipcMain.handle('plugins:list', () => listPlugins(join(dshHomeDir(), 'profiles', 'web')))
-  ipcMain.handle('plugins:disable', async (_event, name: unknown) => {
+  ipcMain.handle('plugins:list', (event) =>
+    fromRecoveryPage(event) ? listPlugins(join(dshHomeDir(), 'profiles', 'web')) : { ok: false, error: 'forbidden' })
+  ipcMain.handle('plugins:disable', async (event, name: unknown) => {
+    if (!fromRecoveryPage(event)) return { ok: false, applied: [], disabledCount: 0, reason: 'forbidden' }
     if (typeof name !== 'string' || !isValidPluginName(name)) return { ok: false, applied: [], disabledCount: 0, reason: 'invalid' }
     return disablePlugin(join(dshHomeDir(), 'profiles', 'web'), name)
   })
-  ipcMain.handle('plugins:enable', async (_event, name: unknown) => {
+  ipcMain.handle('plugins:enable', async (event, name: unknown) => {
+    if (!fromRecoveryPage(event)) return { ok: false, applied: [], disabledCount: 0, reason: 'forbidden' }
     if (typeof name !== 'string' || !isValidPluginName(name)) return { ok: false, applied: [], disabledCount: 0, reason: 'invalid' }
     return enablePlugin(join(dshHomeDir(), 'profiles', 'web'), name)
   })
@@ -280,7 +297,8 @@ function registerAppIpc(): void {
     if (locatedDsh === null) return { ok: false, error: '后端未定位，无法执行插件操作' }
     if (isImmutablePlugin(name)) return { ok: false, error: '系统组件/官方内置/受保护模块不允许卸载或更新' }
     pluginsBusy = true
-    const push = (t: string): void => { if (!quitting) win?.webContents.send('recovery:log', t) }
+    // 出口统一脱敏（与快照同标准）；token 恰跨 chunk 的极端漏网由异常退出快照的整体脱敏兜底
+    const push = (t: string): void => { if (!quitting) win?.webContents.send('recovery:log', sanitizeLog(t)) }
     try {
       push('\r\n[shell] 停止后端，准备执行 dsh plugin ' + action + ' ' + name + '…\r\n')
       if (dsh !== null) { await dsh.stop(); dsh = null }
@@ -297,7 +315,7 @@ function registerAppIpc(): void {
       // Promise 永挂、pluginsBusy 永久占用；超时强杀兜底防管线卡死。
       const code: number | null = await new Promise<number | null>((resolve, reject) => {
         const timer = setTimeout(() => {
-          try { child.kill('SIGKILL') } catch { /* 已退出 */ }
+          killTree(child) // 树杀：dsh CLI 内部 spawnSync 的 pnpm 孙进程一并带走
           reject(new Error('dsh plugin 超时（600s），已终止'))
         }, 600_000)
         child.on('exit', (c) => { clearTimeout(timer); resolve(c) })
@@ -317,13 +335,14 @@ function registerAppIpc(): void {
       pluginsBusy = false
     }
   }
-  ipcMain.handle('plugins:remove', (_event, name: unknown) =>
-    typeof name === 'string' && isValidPluginName(name) ? runPluginCli('remove', name) : { ok: false, error: 'invalid' })
-  ipcMain.handle('plugins:update', (_event, name: unknown) =>
-    typeof name === 'string' && isValidPluginName(name) ? runPluginCli('update', name) : { ok: false, error: 'invalid' })
+  ipcMain.handle('plugins:remove', (event, name: unknown) =>
+    fromRecoveryPage(event) && typeof name === 'string' && isValidPluginName(name) ? runPluginCli('remove', name) : { ok: false, error: 'invalid' })
+  ipcMain.handle('plugins:update', (event, name: unknown) =>
+    fromRecoveryPage(event) && typeof name === 'string' && isValidPluginName(name) ? runPluginCli('update', name) : { ok: false, error: 'invalid' })
   // 插件最新版本（pnpm outdated --json，只读不装、不停后端）：pnpm 缺失/网络失败/
   // 超时都返回空表，页面降级为只显示当前版本
-  ipcMain.handle('plugins:outdated', async () => {
+  ipcMain.handle('plugins:outdated', async (event) => {
+    if (!fromRecoveryPage(event)) return {}
     const profileDir = join(dshHomeDir(), 'profiles', 'web')
     return new Promise<Record<string, string>>((resolve) => {
       const isWin = process.platform === 'win32'
@@ -332,7 +351,7 @@ function registerAppIpc(): void {
         { cwd: profileDir, env: { ...process.env, ...networkProxyEnv() }, windowsHide: true })
       let out = ''
       const timer = setTimeout(() => {
-        try { child.kill('SIGKILL') } catch { /* 已退出 */ }
+        killTree(child) // 树杀：cmd 下面的 pnpm.cmd/node 孙进程一并带走
         resolve(parseOutdatedJson(out))
       }, 45_000)
       child.stdout?.on('data', (d: Buffer) => { out += d.toString() })
@@ -705,7 +724,9 @@ async function bootWithLocatedDsh(): Promise<'ok' | 'not-found' | 'failed'> {
       // stop() 对已退出进程安全（spawn.ts 内 exitCode 检查直接返回）。
       if (dsh !== null) await dsh.stop()
       // 启动失败 → 恢复模式（boot-failed）：不再弹窗退出（handover §7.2）
-      buildRecoveryContext('boot-failed', null, null, dsh?.recentOutput() ?? String(err))
+      // recentOutput 可能为空（HTTP 探测超时时 stderr 常无输出）：拼上失败原因本身，
+      // 其中的 EADDRINUSE 等特征是 parseFailure 的可识别材料
+      buildRecoveryContext('boot-failed', null, null, (dsh?.recentOutput() ?? '') + '\n[shell] ' + String(err))
       await showRecoveryPage()
     }
     return 'failed'
@@ -754,19 +775,18 @@ async function restartEffectiveBackend(): Promise<void> {
  */
 function registerRecoveryIpc(): void {
   let restarting = false
-  ipcMain.handle('recovery:get-state', () => getRecoveryContext())
+  ipcMain.handle('recovery:get-state', (event) => fromRecoveryPage(event) ? getRecoveryContext() : null)
   // 恢复页主题：读 dsh ui-theme 偏好（$DSH_HOME/settings.yaml）；文件缺失/
   // 解析失败 → null，页面侧不设 data-theme，走 CSS prefers-color-scheme
   // 跟随系统（优雅降级）。dsh 崩溃后无法向活体查询，只能直接读文件。
-  ipcMain.handle('recovery:get-theme', () => {
+  ipcMain.handle('recovery:get-theme', (event) => {
+    if (!fromRecoveryPage(event)) return { preference: null }
     let text = ''
     try { text = readFileSync(join(dshHomeDir(), 'settings.yaml'), 'utf8') } catch { /* 缺失/不可读 → 降级 */ }
-    return {
-      preference: parseThemePreference(text),
-      systemDark: nativeTheme.shouldUseDarkColors,
-    }
+    return { preference: parseThemePreference(text) }
   })
-  ipcMain.handle('recovery:exit-restart', async () => {
+  ipcMain.handle('recovery:exit-restart', async (event) => {
+    if (!fromRecoveryPage(event)) return { ok: false, error: 'forbidden' }
     if (restarting) return { ok: false, busy: true }
     // 维护管线（版本切换/插件 CLI/源码更新）进行中拒绝手动重启：
     // 各管线完成时自带的重启会接管，手动重启等它结束再点。
@@ -784,21 +804,24 @@ function registerRecoveryIpc(): void {
       restarting = false
     }
   })
-  ipcMain.handle('recovery:open-log-file', async () => {
+  ipcMain.handle('recovery:open-log-file', async (event) => {
+    if (!fromRecoveryPage(event)) return { ok: false, error: 'forbidden' }
     const dir = join(app.getPath('userData'), 'logs')
     // dev 下日志走 stdout、目录可能从未创建：先确保存在，否则 openPath 静默失败
     try { mkdirSync(dir, { recursive: true }) } catch { /* 打开失败仍会返回错误 */ }
     const err = await shell.openPath(dir)
     return err === '' ? { ok: true } : { ok: false, error: err }
   })
-  ipcMain.handle('recovery:copy-diagnosis', () => {
+  ipcMain.handle('recovery:copy-diagnosis', (event) => {
+    if (!fromRecoveryPage(event)) return { ok: false, error: 'forbidden' }
     const c = getRecoveryContext()
     if (c === null) return { ok: false, error: 'no context' }
     clipboard.writeText(JSON.stringify(c, null, 2))
     return { ok: true }
   })
   // 手动进入恢复中心（设置页入口）：maintenance 语义——无诊断结论，版本区/插件区可用
-  ipcMain.handle('recovery:open', () => {
+  ipcMain.handle('recovery:open', (event) => {
+    if (!fromDshPage(event)) return { ok: false, error: 'forbidden' }
     buildRecoveryContext('maintenance', null, null, '')
     void showRecoveryPage()
     return { ok: true }
@@ -806,7 +829,8 @@ function registerRecoveryIpc(): void {
   // 设置页版本更新交接：跳恢复页（purpose=update，页面不渲染异常观感）并自动
   // 开始安装目标版本；进度经 recovery:log 流式到达版本区，完成后管线自动重启
   // 后端并 loadURL 回 dsh 页（installBackendVersion/installSourceVersion 内置）。
-  ipcMain.handle('recovery:open-update', (_event, target: unknown) => {
+  ipcMain.handle('recovery:open-update', (event, target: unknown) => {
+    if (!fromDshPage(event)) return { ok: false, error: 'forbidden' }
     if (typeof target !== 'string' || target === '') return { ok: false, error: 'invalid' }
     if (versionBusy || pluginsBusy || sourceBusy || isSourceUpdating()) return { ok: false, busy: true }
     buildRecoveryContext('maintenance', null, null, '', 'update')
@@ -1053,9 +1077,12 @@ function main(): void {
     onUpdateStatus((s) => { win?.webContents.send('dsh-update:status', s) })
     // 源码管线的实时日志（下载更新/克隆/准备环境共用）转发给设置页日志区 +
     // 恢复页版本区（recovery:log 聚合通道，两个页面可同时订阅）
-    setSourceLogSink((line) => { if (!quitting) { win?.webContents.send('dsh-source:log', line); win?.webContents.send('recovery:log', line) } })
+    // 实时日志出口统一脱敏（与快照同标准）：恢复页版本区与设置页日志区展示的
+    // 都是原始子进程输出；token 恰好跨 chunk 的极端漏网由异常退出快照的整体
+    // 脱敏（buildRecoveryContext）兜底
+    setSourceLogSink((line) => { if (!quitting) { win?.webContents.send('dsh-source:log', sanitizeLog(line)); win?.webContents.send('recovery:log', sanitizeLog(line)) } })
     // npm 侧版本切换的实时日志（M2 新增）
-    setBackendLogSink((line) => { if (!quitting) win?.webContents.send('recovery:log', line) })
+    setBackendLogSink((line) => { if (!quitting) win?.webContents.send('recovery:log', sanitizeLog(line)) })
     setSourceUpdateHooks({
       restartBackend: restartEffectiveBackend,
       stopBackend: async () => { if (dsh !== null) { await dsh.stop(); dsh = null } },

@@ -58,12 +58,13 @@ export function parsePatchRows(text: string): { names: string[]; ids: string[]; 
       // ids 保留每次出现（insert 子块 id 与顶层 disable/enable 条目 id 是不同行实例）；
       // 只有 insertedIds 去重（本包插入的行集合）。
       ids.push(id[1])
-      if (insertIndent !== null && indent > insertIndent) {
-        if (!insertedIds.includes(id[1])) insertedIds.push(id[1])
-      } else if (indent <= (insertIndent ?? -1)) {
-        insertIndent = null
+      if (insertIndent !== null && indent > insertIndent && !insertedIds.includes(id[1])) {
+        insertedIds.push(id[1])
       }
     }
+    // insert 块止于任何缩退行（不限 id 行）：中间的 name/config 等兄弟键之后
+    // 的缩退同样意味着离开子块，防止后续嵌套 id 被误算进 insertedIds。
+    if (insertIndent !== null && indent <= insertIndent) insertIndent = null
   }
   return { names, ids, insertedIds }
 }
@@ -117,8 +118,10 @@ export function readUserPatchState(patchPath: string): { disables: string[]; for
     const disableRow = /^- id: ([A-Za-z0-9_.-]+)\s*$/.exec(line)
     if (disableRow === null) continue
     const next = lines[index + 1] ?? ''
-    if (/^ {2}disabled: true\s*$/.test(next)) disables.push(disableRow[1])
-    else if (/^ {2}disabled: false\s*$/.test(next)) forced.push(disableRow[1])
+    // 紧随 id 行的 disabled 键才是行禁用标志（「下一行」限定避免嵌套
+    // config.disabled 之类误判）；缩进任意（2/4 空格手工文件）、允许行尾注释
+    if (/^\s+disabled:\s*true\s*(?:#.*)?$/.test(next)) disables.push(disableRow[1])
+    else if (/^\s+disabled:\s*false\s*(?:#.*)?$/.test(next)) forced.push(disableRow[1])
   }
   return { disables, forced, inserts }
 }

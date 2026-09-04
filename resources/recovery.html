@@ -78,7 +78,6 @@
   button.act:disabled { opacity: .5; cursor: default; }
   button.ghost { background: transparent; border: 1px solid var(--ghost-border); color: var(--text); }
   button.ghost:hover { border-color: var(--accent); }
-  button.ghost:hover { border-color: var(--accent); }
   .primary { font-size: 14px; padding: 11px 22px; }
   .hint { font-size: 12px; color: var(--faint); }
   .version-list { margin: 4px 0; }
@@ -479,6 +478,10 @@
       const r = enable ? await bridge.plugins.enable(p.name) : await bridge.plugins.disable(p.name)
       if (r.ok !== true) { alert(label + '失败：' + (r.reason ?? '未知原因')); return }
       await loadPlugins()
+    } catch (e) {
+      // 写入被拒（如 Windows 下 renameSync 遇 EPERM/EBUSY）时 IPC reject：必须提示，
+      // 否则用户看到「点了没反应」
+      alert(label + '异常：' + String(e))
     } finally {
       pluginBusy = false
       btn.disabled = false

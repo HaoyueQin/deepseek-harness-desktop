@@ -14,6 +14,7 @@ import { log } from './log.js'
 import { locateDsh } from './dsh-locator.js'
 import { resolveUpdateTarget, SEMVER_RE } from './dsh-update-target.js'
 import { networkProxyEnv } from './settings.js'
+import { killTree } from './kill-tree.js'
 
 export type UpdateStage = 'idle' | 'checking' | 'updating' | 'done' | 'error'
 
@@ -73,7 +74,7 @@ function runNpm(args: string[], opts: { stream?: boolean; timeoutMs?: number } =
     // 网络挂起时 npm 永不退出：超时强杀，防 versionBusy 永久占用恢复页
     const timeoutMs = opts.timeoutMs ?? 600_000
     const timer = setTimeout(() => {
-      try { child.kill('SIGKILL') } catch { /* 已退出 */ }
+      killTree(child) // 树杀:cmd 下面的 npm.cmd/node 孙进程一并带走
       reject(new Error(`npm ${args[0]} 超时（${Math.round(timeoutMs / 1000)}s），已终止`))
     }, timeoutMs)
     let out = ''

@@ -16,6 +16,7 @@ import { getNetworkProxy, networkProxyEnv } from './settings.js'
 import { pickLatestTag, tagVersion, validateSourceDir, isOfficialRemoteUrl } from './dsh-source.js'
 import { compareVersions } from './dsh-locator.js'
 import { SEMVER_RE } from './dsh-update-target.js'
+import { killTree } from './kill-tree.js'
 import type { BackendVersion } from './dsh-versions.js'
 import type { BackendUpdateStatus } from './dsh-updater.js'
 
@@ -97,7 +98,7 @@ function runStreamed(bin: string, args: string[], opts: { cwd: string; viaShell?
     // fetch/install/build 挂起（网络/文件锁）时强杀：防 sourceBusy/isSourceUpdating 永久占用
     const timeoutMs = opts.timeoutMs ?? 900_000
     const timer = setTimeout(() => {
-      try { child.kill('SIGKILL') } catch { /* 已退出 */ }
+      killTree(child) // 树杀:cmd 下面的 pnpm/npm 孙进程一并带走
       reject(new Error(`${bin} ${args[0]} 超时（${Math.round(timeoutMs / 1000)}s），已终止`))
     }, timeoutMs)
     let out = ''

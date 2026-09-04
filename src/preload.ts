@@ -120,7 +120,7 @@ contextBridge.exposeInMainWorld('dshDesktop', {
   },
   recovery: {
     getState: (): Promise<unknown> => ipcRenderer.invoke('recovery:get-state'),
-    getTheme: (): Promise<{ preference: 'light' | 'dark' | 'system' | null; systemDark: boolean }> =>
+    getTheme: (): Promise<{ preference: 'light' | 'dark' | 'system' | null }> =>
       ipcRenderer.invoke('recovery:get-theme'),
     exitRestart: (): Promise<{ ok: boolean; busy?: boolean; error?: string }> =>
       ipcRenderer.invoke('recovery:exit-restart'),
