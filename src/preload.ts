@@ -128,5 +128,7 @@ contextBridge.exposeInMainWorld('dshDesktop', {
     copyDiagnosis: (): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke('recovery:copy-diagnosis'),
     open: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('recovery:open'),
+    openUpdate: (target: string): Promise<{ ok: boolean; busy?: boolean; error?: string }> =>
+      ipcRenderer.invoke('recovery:open-update', target),
   },
 })

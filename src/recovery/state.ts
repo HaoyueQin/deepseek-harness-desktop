@@ -15,6 +15,8 @@ export interface RecoveryContext {
   diagnosis: FailureDiagnosis
   dshVersion: string
   dshSource: 'npm-global' | 'git-local' | null
+  /** 进入目的：'update' = 版本更新交接（页面不渲染异常观感，聚焦更新进度）。 */
+  purpose?: 'update'
   enteredAt: string
 }
 

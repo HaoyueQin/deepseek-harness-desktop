@@ -84,6 +84,7 @@ function buildRecoveryContext(
   code: number | null,
   signal: string | null,
   rawOutput: string,
+  purpose?: 'update',
 ): void {
   const outputTail = sanitizeLog(rawOutput)
   enterRecovery({
@@ -91,6 +92,7 @@ function buildRecoveryContext(
     diagnosis: parseFailure(outputTail),
     dshVersion: readDshVersion(),
     dshSource: locatedDsh?.source ?? null,
+    purpose,
   })
 }
 
@@ -750,6 +752,29 @@ function registerRecoveryIpc(): void {
   ipcMain.handle('recovery:open', () => {
     buildRecoveryContext('maintenance', null, null, '')
     void showRecoveryPage()
+    return { ok: true }
+  })
+  // 设置页版本更新交接：跳恢复页（purpose=update，页面不渲染异常观感）并自动
+  // 开始安装目标版本；进度经 recovery:log 流式到达版本区，完成后管线自动重启
+  // 后端并 loadURL 回 dsh 页（installBackendVersion/installSourceVersion 内置）。
+  ipcMain.handle('recovery:open-update', (_event, target: unknown) => {
+    if (typeof target !== 'string' || target === '') return { ok: false, error: 'invalid' }
+    if (versionBusy || sourceBusy || isSourceUpdating()) return { ok: false, busy: true }
+    buildRecoveryContext('maintenance', null, null, '', 'update')
+    void showRecoveryPage()
+    versionBusy = true
+    void (async () => {
+      try {
+        const s = locatedDsh?.source === 'git-local'
+          ? await installSourceVersion(target)
+          : await installBackendVersion(target)
+        if (s.stage !== 'done') log(`recovery:open-update 未完成: ${String(s.error ?? '')}`)
+      } catch (err) {
+        log(`recovery:open-update 失败 ${String(err)}`)
+      } finally {
+        versionBusy = false
+      }
+    })()
     return { ok: true }
   })
 }

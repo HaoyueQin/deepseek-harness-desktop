@@ -22,6 +22,15 @@ enterRecovery({
 })
 assert.equal(getRecoveryContext()?.kind, 'boot-failed')
 
+// purpose 透传：版本更新交接（页面据此不渲染异常观感）
+enterRecovery({
+  kind: 'maintenance', code: null, signal: null, outputTail: '',
+  diagnosis: { kind: 'unknown' }, dshVersion: '0.1.2-rc.1', dshSource: 'npm-global',
+  purpose: 'update',
+})
+assert.equal(getRecoveryContext()?.purpose, 'update')
+assert.equal(getRecoveryContext()?.kind, 'maintenance')
+
 clearRecoveryContext()
 assert.equal(getRecoveryContext(), null)
 
