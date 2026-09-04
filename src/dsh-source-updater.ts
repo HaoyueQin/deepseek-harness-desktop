@@ -84,7 +84,7 @@ const proxyEnv = networkProxyEnv
  * git 是 .exe 直接 spawn（args 数组原样传达，路径含空格安全）；pnpm 是
  * .cmd shim，经 ComSpec /c 解析（参数均为受控字面量，无空格敏感值）。
  */
-function runStreamed(bin: string, args: string[], opts: { cwd: string; viaShell?: boolean; env?: NodeJS.ProcessEnv }): Promise<string> {
+function runStreamed(bin: string, args: string[], opts: { cwd: string; viaShell?: boolean; env?: NodeJS.ProcessEnv; timeoutMs?: number }): Promise<string> {
   return new Promise((resolve, reject) => {
     const started = Date.now()
     const isWin = process.platform === 'win32'
@@ -94,12 +94,19 @@ function runStreamed(bin: string, args: string[], opts: { cwd: string; viaShell?
           cwd: opts.cwd, env: { ...process.env, ...opts.env }, windowsHide: true,
         })
       : spawn(bin, args, { cwd: opts.cwd, env: { ...process.env, ...opts.env }, windowsHide: true })
+    // fetch/install/build 挂起（网络/文件锁）时强杀：防 sourceBusy/isSourceUpdating 永久占用
+    const timeoutMs = opts.timeoutMs ?? 900_000
+    const timer = setTimeout(() => {
+      try { child.kill('SIGKILL') } catch { /* 已退出 */ }
+      reject(new Error(`${bin} ${args[0]} 超时（${Math.round(timeoutMs / 1000)}s），已终止`))
+    }, timeoutMs)
     let out = ''
     const push = (d: Buffer): void => { const t = d.toString(); out += t; emitLog(t) }
     child.stdout?.on('data', push)
     child.stderr?.on('data', push)
-    child.on('error', reject)
+    child.on('error', (e) => { clearTimeout(timer); reject(e) })
     child.on('exit', (code) => {
+      clearTimeout(timer)
       const seconds = Math.round((Date.now() - started) / 1000)
       if (code === 0) resolve(out)
       else reject(new Error(`${bin} ${args[0]} 失败 (code=${String(code)}，耗时 ${seconds}s)`))
@@ -154,8 +161,9 @@ export async function listSourceVersions(): Promise<BackendVersion[]> {
   return result
 }
 
-/** 检查远端最新 tag；与当前一致时 latest 置 null（无更新）。 */
+/** 检查远端最新 tag；与当前一致时 latest 置 null（无更新）。切换/安装进行中直接返回现状。 */
 export async function checkSourceUpdate(): Promise<BackendUpdateStatus> {
+  if (status.stage === 'updating') return { ...status }
   status.current = currentVersion
   status.stage = 'checking'
   status.error = undefined

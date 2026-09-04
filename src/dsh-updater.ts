@@ -59,7 +59,7 @@ export function initBackendUpdater(current: string): void {
   status.current = current
 }
 
-function runNpm(args: string[], opts: { stream?: boolean } = {}): Promise<string> {
+function runNpm(args: string[], opts: { stream?: boolean; timeoutMs?: number } = {}): Promise<string> {
   return new Promise((resolve, reject) => {
     // 参数为受控字面量（动态版本串来自 resolveUpdateTarget 的 SEMVER_RE 过滤）；
     // Windows 经 ComSpec /c 解析 .cmd shim（shell:true+args 数组在 Node≥22 有 DEP0190 警告）
@@ -70,6 +70,12 @@ function runNpm(args: string[], opts: { stream?: boolean } = {}): Promise<string
         env: { ...process.env, ...networkProxyEnv() },
         windowsHide: true,
       })
+    // 网络挂起时 npm 永不退出：超时强杀，防 versionBusy 永久占用恢复页
+    const timeoutMs = opts.timeoutMs ?? 600_000
+    const timer = setTimeout(() => {
+      try { child.kill('SIGKILL') } catch { /* 已退出 */ }
+      reject(new Error(`npm ${args[0]} 超时（${Math.round(timeoutMs / 1000)}s），已终止`))
+    }, timeoutMs)
     let out = ''
     let err = ''
     child.stdout?.on('data', (d: Buffer) => {
@@ -80,23 +86,25 @@ function runNpm(args: string[], opts: { stream?: boolean } = {}): Promise<string
       const t = d.toString(); err += t
       if (opts.stream === true) emitLog(t)
     })
-    child.on('error', reject)
+    child.on('error', (e) => { clearTimeout(timer); reject(e) })
     child.on('exit', (code) => {
+      clearTimeout(timer)
       if (code === 0) resolve(out.trim())
       else reject(new Error(`npm ${args[0]} 失败 (code=${String(code)}) ${(err || out).slice(-400)}`))
     })
   })
 }
 
-/** 检查 npm 上最新版；与当前一致时 latest 置 null（无更新）。 */
+/** 检查 npm 上最新版；与当前一致时 latest 置 null（无更新）。切换/安装进行中直接返回现状。 */
 export async function checkBackendUpdate(): Promise<BackendUpdateStatus> {
+  if (status.stage === 'updating') return { ...status }
   status.current = currentVersion
   status.stage = 'checking'
   status.error = undefined
   publish()
   try {
     const distTags = JSON.parse(
-      await runNpm(['view', '@deepseek-ai/dsh', 'dist-tags', '--json']),
+      await runNpm(['view', '@deepseek-ai/dsh', 'dist-tags', '--json'], { timeoutMs: 60_000 }),
     ) as Record<string, string>
     const target = resolveUpdateTarget(distTags, currentVersion)
     status.latest = target?.version ?? null
@@ -118,8 +126,8 @@ export function setBackendRestartHandler(fn: () => Promise<void>): void {
 
 /** 拉取 npm 发布版本清单与 dist-tags（恢复页版本区数据源；失败抛错由调用方处理）。 */
 export async function fetchNpmVersions(): Promise<{ versions: string[]; distTags: Record<string, string> }> {
-  const versions = JSON.parse(await runNpm(['view', '@deepseek-ai/dsh', 'versions', '--json'])) as string[]
-  const distTags = JSON.parse(await runNpm(['view', '@deepseek-ai/dsh', 'dist-tags', '--json'])) as Record<string, string>
+  const versions = JSON.parse(await runNpm(['view', '@deepseek-ai/dsh', 'versions', '--json'], { timeoutMs: 60_000 })) as string[]
+  const distTags = JSON.parse(await runNpm(['view', '@deepseek-ai/dsh', 'dist-tags', '--json'], { timeoutMs: 60_000 })) as Record<string, string>
   return { versions, distTags }
 }
 

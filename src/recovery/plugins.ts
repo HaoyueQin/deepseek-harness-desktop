@@ -109,3 +109,13 @@ export function enablePlugin(profileDir: string, name: string): Promise<ToggleRe
 export function pluginCliArgs(action: 'remove' | 'update', name: string): string[] {
   return ['plugin', '--profile', 'web', action, name]
 }
+
+/** 不可在恢复页卸载/更新的插件：保护名单 + 官方 in-box bundle + 壳系统组件。 */
+export function isImmutablePlugin(name: string): boolean {
+  return isProtectedModule(name) || INBOX_BUNDLES.has(name) || name === DESKTOP_SYSTEM_COMPONENT
+}
+
+/** npm 包名白名单：挡住 pnpm 旗标注入与相对路径穿越（IPC 边界校验）。 */
+export function isValidPluginName(name: string): boolean {
+  return /^(@[a-zA-Z0-9][a-zA-Z0-9._-]*\/)?[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(name)
+}

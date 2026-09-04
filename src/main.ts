@@ -35,7 +35,7 @@ import { listNpmVersions } from './dsh-versions.js'
 import { locateSourceDsh, validateSourceDir, OFFICIAL_REPO_URL } from './dsh-source.js'
 import { enterRecovery, getRecoveryContext, clearRecoveryContext } from './recovery/state.js'
 import { parseFailure, sanitizeLog } from './recovery/parse-failure.js'
-import { disablePlugin, enablePlugin, listPlugins, pluginCliArgs } from './recovery/plugins.js'
+import { disablePlugin, enablePlugin, isImmutablePlugin, isValidPluginName, listPlugins, pluginCliArgs } from './recovery/plugins.js'
 import { parseThemePreference } from './recovery/theme.js'
 // electron-updater 的 update-downloaded 事件带 downloadedFile（本地完整路径），
 // UpdateInfo.path 只是 latest.yml 里的相对文件名，spawn 会 ENOENT。
@@ -253,7 +253,7 @@ function registerAppIpc(): void {
   // 切换任意版本（升级/回退统一）：安装成功自动重启后端并 loadURL 回 dsh 页
   ipcMain.handle('dsh-backend:install-version', async (_event, target: unknown) => {
     if (typeof target !== 'string' || target === '') return { ok: false, error: 'invalid' }
-    if (versionBusy || sourceBusy || isSourceUpdating()) return { ok: false, busy: true }
+    if (versionBusy || pluginsBusy || sourceBusy || isSourceUpdating()) return { ok: false, busy: true }
     versionBusy = true
     try {
       const s = locatedDsh?.source === 'git-local'
@@ -267,17 +267,18 @@ function registerAppIpc(): void {
   // 插件救火区：清单/禁用/启用（纯文件，dsh 崩溃态可用）
   ipcMain.handle('plugins:list', () => listPlugins(join(dshHomeDir(), 'profiles', 'web')))
   ipcMain.handle('plugins:disable', async (_event, name: unknown) => {
-    if (typeof name !== 'string' || name === '') return { ok: false, applied: [], disabledCount: 0, reason: 'invalid' }
+    if (typeof name !== 'string' || !isValidPluginName(name)) return { ok: false, applied: [], disabledCount: 0, reason: 'invalid' }
     return disablePlugin(join(dshHomeDir(), 'profiles', 'web'), name)
   })
   ipcMain.handle('plugins:enable', async (_event, name: unknown) => {
-    if (typeof name !== 'string' || name === '') return { ok: false, applied: [], disabledCount: 0, reason: 'invalid' }
+    if (typeof name !== 'string' || !isValidPluginName(name)) return { ok: false, applied: [], disabledCount: 0, reason: 'invalid' }
     return enablePlugin(join(dshHomeDir(), 'profiles', 'web'), name)
   })
   // 卸载/更新：dsh plugin CLI 编排——停后端防文件锁 → spawn → 重启
   const runPluginCli = async (action: 'remove' | 'update', name: string): Promise<{ ok: boolean; busy?: boolean; error?: string }> => {
     if (pluginsBusy || sourceBusy || versionBusy || isSourceUpdating()) return { ok: false, busy: true }
     if (locatedDsh === null) return { ok: false, error: '后端未定位，无法执行插件操作' }
+    if (isImmutablePlugin(name)) return { ok: false, error: '系统组件/官方内置/受保护模块不允许卸载或更新' }
     pluginsBusy = true
     const push = (t: string): void => { if (!quitting) win?.webContents.send('recovery:log', t) }
     try {
@@ -292,7 +293,16 @@ function registerAppIpc(): void {
       let lastOut = ''
       child.stdout?.on('data', (d: Buffer) => { const s = d.toString(); lastOut = s; push(s) })
       child.stderr?.on('data', (d: Buffer) => { const s = d.toString(); lastOut = s; push(s) })
-      const code: number | null = await new Promise((resolve) => child.on('exit', resolve))
+      // spawn 失败（如 node 不在 PATH）只触发 error 不触发 exit：不监听会让
+      // Promise 永挂、pluginsBusy 永久占用；超时强杀兜底防管线卡死。
+      const code: number | null = await new Promise<number | null>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          try { child.kill('SIGKILL') } catch { /* 已退出 */ }
+          reject(new Error('dsh plugin 超时（600s），已终止'))
+        }, 600_000)
+        child.on('exit', (c) => { clearTimeout(timer); resolve(c) })
+        child.on('error', (err: Error) => { clearTimeout(timer); reject(err) })
+      })
       if (code !== 0) {
         push('\r\n[shell] ✗ 插件操作失败（exit=' + String(code) + '）：' + lastOut.slice(-300) + '\r\n')
         throw new Error('dsh plugin ' + action + ' 失败（exit ' + String(code) + '）')
@@ -308,9 +318,9 @@ function registerAppIpc(): void {
     }
   }
   ipcMain.handle('plugins:remove', (_event, name: unknown) =>
-    typeof name === 'string' && name !== '' ? runPluginCli('remove', name) : { ok: false, error: 'invalid' })
+    typeof name === 'string' && isValidPluginName(name) ? runPluginCli('remove', name) : { ok: false, error: 'invalid' })
   ipcMain.handle('plugins:update', (_event, name: unknown) =>
-    typeof name === 'string' && name !== '' ? runPluginCli('update', name) : { ok: false, error: 'invalid' })
+    typeof name === 'string' && isValidPluginName(name) ? runPluginCli('update', name) : { ok: false, error: 'invalid' })
   // 后端来源配置：读取（含源码目录校验结果）/保存/选目录/重启生效
   ipcMain.handle('dsh-backend:get-config', () => {
     const dir = getSourceDir()
@@ -687,21 +697,35 @@ async function bootWithLocatedDsh(): Promise<'ok' | 'not-found' | 'failed'> {
  * 停掉当前 dsh → 重新解析生效后端（版本/来源可能已变，如源码更新检出
  * 新 tag）→ 重启并重载窗口。npm 与源码两个更新器共用。
  */
+let restartInFlight: Promise<void> | null = null
 async function restartEffectiveBackend(): Promise<void> {
-  if (dsh !== null) { await dsh.stop(); dsh = null }
-  if (quitting) return
-  const resolved = resolveBackend()
-  if (resolved === null) throw new Error('重启后无法定位可用的 dsh 后端')
-  locatedDsh = resolved.located
-  backendNotice = resolved.notice ?? null
-  if (locatedDsh.source === 'git-local' && locatedDsh.cwd !== undefined) {
-    initSourceUpdater(locatedDsh.version, locatedDsh.cwd)
-  } else {
-    initBackendUpdater(locatedDsh.version)
+  // 互斥：版本安装完成与插件 CLI 完成（乃至用户手动重启）时间重叠时共享同一次
+  // 重启——否则两个并发 stop+spawn 会产生双 dsh 进程（前者沦为孤儿）。
+  if (restartInFlight !== null) {
+    await restartInFlight
+    return
   }
-  win?.webContents.send('dsh-backend:update-status', { stage: 'restarting', message: '正在重启后端…' })
-  await startDshAndLoad(locatedDsh)
-  pushBackendNotice()
+  restartInFlight = (async () => {
+    if (dsh !== null) { await dsh.stop(); dsh = null }
+    if (quitting) return
+    const resolved = resolveBackend()
+    if (resolved === null) throw new Error('重启后无法定位可用的 dsh 后端')
+    locatedDsh = resolved.located
+    backendNotice = resolved.notice ?? null
+    if (locatedDsh.source === 'git-local' && locatedDsh.cwd !== undefined) {
+      initSourceUpdater(locatedDsh.version, locatedDsh.cwd)
+    } else {
+      initBackendUpdater(locatedDsh.version)
+    }
+    win?.webContents.send('dsh-backend:update-status', { stage: 'restarting', message: '正在重启后端…' })
+    await startDshAndLoad(locatedDsh)
+    pushBackendNotice()
+  })()
+  try {
+    await restartInFlight
+  } finally {
+    restartInFlight = null
+  }
 }
 
 /**
@@ -725,6 +749,9 @@ function registerRecoveryIpc(): void {
   })
   ipcMain.handle('recovery:exit-restart', async () => {
     if (restarting) return { ok: false, busy: true }
+    // 维护管线（版本切换/插件 CLI/源码更新）进行中拒绝手动重启：
+    // 各管线完成时自带的重启会接管，手动重启等它结束再点。
+    if (versionBusy || pluginsBusy || sourceBusy || isSourceUpdating()) return { ok: false, busy: true }
     restarting = true
     clearRecoveryContext()
     try {
@@ -759,7 +786,7 @@ function registerRecoveryIpc(): void {
   // 后端并 loadURL 回 dsh 页（installBackendVersion/installSourceVersion 内置）。
   ipcMain.handle('recovery:open-update', (_event, target: unknown) => {
     if (typeof target !== 'string' || target === '') return { ok: false, error: 'invalid' }
-    if (versionBusy || sourceBusy || isSourceUpdating()) return { ok: false, busy: true }
+    if (versionBusy || pluginsBusy || sourceBusy || isSourceUpdating()) return { ok: false, busy: true }
     buildRecoveryContext('maintenance', null, null, '', 'update')
     void showRecoveryPage()
     versionBusy = true
