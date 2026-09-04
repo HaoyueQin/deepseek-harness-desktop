@@ -581,27 +581,6 @@ window.__ModuleLoader__.load({
 										}, "检查更新"),
 					),
 				),
-
-				// ===== 临时测试入口（验收后整块删除）=====
-				// 用途：无法人工制造异常场景/无新版可更新时，手动打开恢复中心看效果。
-				// 删除方法：搜索「临时测试入口」删除本块即可，无其他引用。
-				React.createElement("div", { style: { ...rowStyle, opacity: 0.75, borderStyle: "dashed" } },
-					React.createElement("div", {},
-						React.createElement("div", { style: labelStyle }, zh ? "恢复中心（临时测试入口）" : "Recovery Center (temporary test entry)"),
-						React.createElement("div", { style: subStyle },
-							zh
-								? "仅供验收：手动进入恢复中心的维护模式（版本切换/插件救火）。验收完成后此入口会删除。"
-								: "For acceptance only: opens the recovery center's maintenance mode (version switching / plugin rescue). Removed after acceptance.",
-						),
-						desktop.recovery && desktop.recovery.open
-							? React.createElement("button", {
-									style: { ...ghostBtn, marginTop: "8px" },
-									onClick: () => { desktop.recovery.open().catch(() => {}) },
-								}, zh ? "打开恢复中心" : "Open Recovery Center")
-							: null,
-					),
-				),
-				// ===== 临时测试入口结束 =====
 			)
 		}
 
