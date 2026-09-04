@@ -553,10 +553,18 @@ async function bootWithLocatedDsh(): Promise<'ok' | 'not-found' | 'failed'> {
   } catch (err) {
     log(`dsh 启动失败: ${String(err)}`)
     if (!quitting) {
+      // 先取输出快照再停进程：弹窗要展示真实死因（如 dsh 0.1.3 起依赖
+      // 缺失 fs-ext 的 ERR_MODULE_NOT_FOUND 只出现在 stdout/stderr 里，
+      // 不在 err 信息里）。token 脱敏后展示。
+      const snapshot = dsh?.recentOutput() ?? ''
       // 失败时 dsh 可能已监听端口（仅 HTTP 探测失败），先停掉再退出，
       // 防止 dsh 变孤儿进程常驻后台、占用 DSH_HOME 文件锁
       if (dsh !== null) await dsh.stop()
-      await dialog.showErrorBox('DeepSeek Harness 启动失败', String(err))
+      const detail = snapshot.trim() === ''
+        ? String(err)
+        : `${String(err)}\n\n───── dsh 子进程输出（尾部，token 已脱敏） ─────\n`
+          + snapshot.replace(/token=[A-Za-z0-9_-]+/g, 'token=…').trim()
+      await dialog.showErrorBox('DeepSeek Harness 启动失败', detail)
       app.quit()
     }
     return 'failed'

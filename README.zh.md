@@ -72,7 +72,7 @@
 ### 前置条件
 
 - **npm 渠道（默认）**：Node.js ≥ 22 与 dsh CLI（`npm i -g @deepseek-ai/dsh`）——若未安装，应用会显示引导页，提供可复制命令或壳内一键安装
-- **源码渠道（可选）**：额外要求 PATH 里有 `git` 与 `pnpm`；克隆仓库与 `pnpm install` + `pnpm build` 均由壳代劳
+- **源码渠道（可选）**：额外要求 PATH 里有 `git` 与 `pnpm`；克隆仓库与 `pnpm install` + `pnpm build` 均由壳代劳——运行 dsh ≥ 0.1.3 源码还需 C++ 构建工具链（Windows：Visual Studio Build Tools，「使用 C++ 的桌面开发」工作负载），用于编译 `fs-ext` 依赖
 
 ### 下载
 

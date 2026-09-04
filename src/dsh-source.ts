@@ -5,17 +5,20 @@
  * `node --import tsx/esm apps/cli/src/bin.ts web …`（cwd=仓库根）已验证
  * 对 dsh-v0.1.0-rc.8 ～ dsh-v0.1.2-rc.1 逐字一致（根 package.json 的
  * "dsh" script、tsx devDep、入口路径各 tag 相同）；本项目支持版本为
- * dsh ≥0.1.2（rc.1 与 alpha.5 同代码），详见 README 支持版本说明。
+ * dsh ≥0.1.2，详见 README 支持版本说明。
  *
  * 启动硬前提（阻断项，缺一不可）：
  * 1. apps/cli/package.json 可读（取版本号）
  * 2. node_modules/tsx 存在（--import tsx/esm 从 cwd 解析，需先 pnpm install）
  * 3. apps/web/dist/index.html 存在（旧版缺 dist 启动即 throw、alpha.1+ 缺 dist
  *    白屏——统一前置拦截，要求先跑过一次 `pnpm build`）
+ * 4. dsh ≥0.1.3 时 pnpm store 里有新增硬依赖 fs-ext（需 C++ 编译工具链，
+ *    无 prebuilt）——tsx 在而 fs-ext 不在说明依赖是旧版安装的（如手动
+ *    git pull 后未重新 install），启动必然崩 ERR_MODULE_NOT_FOUND
  */
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { compareVersions, type LocatedDsh } from './dsh-locator.js'
 
@@ -46,6 +49,20 @@ export function readSourceVersion(dir: string): string {
     return typeof manifest.version === 'string' ? manifest.version : ''
   } catch {
     return ''
+  }
+}
+
+/**
+ * pnpm 虚拟 store（node_modules/.pnpm）里是否存在某包（按目录名前缀）。
+ * fs-ext 等仅被 workspace 子包引用的依赖不落根 node_modules，以 store 为准。
+ */
+function pnpmStoreHas(dir: string, prefix: string): boolean {
+  const store = join(dir, 'node_modules', '.pnpm')
+  if (!existsSync(store)) return false
+  try {
+    return readdirSync(store).some((name) => name.startsWith(prefix))
+  } catch {
+    return false
   }
 }
 
@@ -121,6 +138,15 @@ export function validateSourceDir(
   if (version === '') missing.push('不是 dsh 源码仓库（缺 apps/cli/package.json 或版本号不可读）')
   if (!existsSync(join(dir, 'node_modules', 'tsx'))) missing.push('依赖未安装（缺 node_modules/tsx，请在源码目录执行 pnpm install）')
   if (!existsSync(join(dir, 'apps', 'web', 'dist', 'index.html'))) missing.push('前端未构建（缺 apps/web/dist，请在源码目录执行 pnpm build）')
+  // 依赖完整性（dsh ≥0.1.3 才需要 fs-ext；以版本门控避免误报旧版目录）。
+  // fs-ext 仅被 workspace 子包引用、不落根 node_modules，以 pnpm store 为准。
+  if (
+    version !== ''
+    && compareVersions(version, '0.1.3-alpha.1') >= 0
+    && !pnpmStoreHas(dir, 'fs-ext@')
+  ) {
+    missing.push('依赖是旧版本安装的（缺 dsh 0.1.3 新增的 fs-ext），请重新执行 pnpm install（设置页「准备环境」或「下载更新」会自动完成）')
+  }
 
   const warnings: string[] = []
   if (!existsSync(join(dir, '.git'))) {

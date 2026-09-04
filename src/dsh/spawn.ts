@@ -1,6 +1,7 @@
 /**
  * dsh web 子进程生命周期：spawn、stdout URL 行解析、HTTP 就绪探测、
- * 优雅停止（kill → 超时强杀兜底）。
+ * 优雅停止（kill → 超时强杀兜底）、输出快照（stdout+stderr 合并滚动保留
+ * 尾部 16KB，供启动失败弹窗展示真实死因；消费侧脱敏 token）。
  *
  * 端口：默认固定 3080（与 dsh web 默认一致，页面 origin 稳定，浏览器
  * localStorage 侧的设置跨重启保留），被占用时由调用方降级 --port 0。
@@ -62,6 +63,8 @@ export interface DshControl {
   url: Promise<string>
   /** 停止 dsh：kill 后等待退出，超时强杀。 */
   stop: () => Promise<void>
+  /** 最近合并输出快照尾部（stdout+stderr 原文，含 token——消费侧须脱敏）。 */
+  recentOutput: () => string
 }
 
 export function startDsh(options: StartDshOptions): DshControl {
@@ -84,6 +87,15 @@ export function startDsh(options: StartDshOptions): DshControl {
     windowsHide: true,
   })
 
+  // 输出快照：stdout+stderr 合并滚动，只留尾部（启动失败时早先的日志
+  // 不可能再包含死因，死因必然在最新输出里）。
+  const RECENT_MAX = 16 * 1024
+  let recent = ''
+  const pushRecent = (text: string): void => {
+    recent += text
+    if (recent.length > RECENT_MAX) recent = recent.slice(-RECENT_MAX)
+  }
+
   let expectedStop = false
   let urlResolve!: (url: string) => void
   let urlReject!: (err: Error) => void
@@ -97,6 +109,7 @@ export function startDsh(options: StartDshOptions): DshControl {
 
   const onStdout = (chunk: Buffer): void => {
     const text = chunk.toString()
+    pushRecent(text)
     onLog(text.trimEnd())
     if (settled || urlFound) return
     const found = urlLine.push(text)
@@ -117,7 +130,10 @@ export function startDsh(options: StartDshOptions): DshControl {
   }
 
   child.stdout?.on('data', onStdout)
-  child.stderr?.on('data', (chunk: Buffer) => onLog(chunk.toString().trimEnd()))
+  child.stderr?.on('data', (chunk: Buffer) => {
+    pushRecent(chunk.toString())
+    onLog(chunk.toString().trimEnd())
+  })
   child.on('error', (err) => {
     settled = true
     urlReject(err)
@@ -159,5 +175,5 @@ export function startDsh(options: StartDshOptions): DshControl {
     })
   }
 
-  return { exited, url, stop }
+  return { exited, url, stop, recentOutput: () => recent }
 }

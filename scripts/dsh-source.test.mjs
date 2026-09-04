@@ -62,6 +62,28 @@ test('缺 tsx：missing 指向 pnpm install', () => {
   assert.match(v.missing[0], /pnpm install/)
 })
 
+test('dsh ≥0.1.3 缺 fs-ext：missing 指向重新 pnpm install', () => {
+  // 旧安装形态：tsx/dist 都在，但 pnpm store 里没有 0.1.3 新增的 fs-ext
+  const dir = makeSourceDir((d) => {
+    writeFileSync(join(d, 'apps', 'cli', 'package.json'), JSON.stringify({ version: '0.1.3-alpha.1' }))
+  })
+  const v = validateSourceDir(dir)
+  assert.equal(v.ok, false)
+  assert.equal(v.missing.length, 1)
+  assert.match(v.missing[0], /fs-ext/)
+  assert.match(v.missing[0], /pnpm install/)
+})
+
+test('dsh ≥0.1.3 pnpm store 有 fs-ext：不报缺失', () => {
+  const dir = makeSourceDir((d) => {
+    writeFileSync(join(d, 'apps', 'cli', 'package.json'), JSON.stringify({ version: '0.1.3-alpha.1' }))
+    mkdirSync(join(d, 'node_modules', '.pnpm', 'fs-ext@2.1.1'), { recursive: true })
+  })
+  const v = validateSourceDir(dir)
+  assert.equal(v.ok, true)
+  assert.deepEqual(v.missing, [])
+})
+
 test('官方 remote：无 remote 警告；非官方 remote：有警告', () => {
   const official = makeSourceDir((d) => writeGitConfig(d, 'https://github.com/deepseek-ai/deepseek-harness.git'))
   assert.deepEqual(validateSourceDir(official).warnings, [])

@@ -74,7 +74,7 @@ Settings → Desktop from a supported shell) **or** download the matching older 
 ### Prerequisites
 
 - **npm channel (default)**: Node.js ≥ 22 and the `dsh` CLI (`npm i -g @deepseek-ai/dsh`) — if missing, the app shows a setup page with a copyable command or a one-click in-app install
-- **Source channel (optional)**: additionally requires `git` and `pnpm` on PATH; the shell clones the repo and runs `pnpm install` + `pnpm build` for you
+- **Source channel (optional)**: additionally requires `git` and `pnpm` on PATH; the shell clones the repo and runs `pnpm install` + `pnpm build` for you — dsh ≥ 0.1.3 sources also need a C++ build toolchain (on Windows: Visual Studio Build Tools with the "Desktop development with C++" workload) to compile the `fs-ext` dependency
 
 ### Download
 
