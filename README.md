@@ -26,15 +26,25 @@ A desktop shell for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-h
 
 ## Features
 
+### Recovery Center — when an update breaks the backend
+
+dsh moves fast and occasionally ships breaking changes, and plugins often lag behind — so a dsh update can leave the backend unable to boot, and a plugin that used to work can suddenly take the whole harness down with it. Until now, all the shell told you was a dead-end "backend exited unexpectedly" dialog: no plugin name, no error detail, no way to fix anything in place.
+
+The Recovery Center is the shell's answer — a native page that turns a broken backend into a few clicks:
+
+- **Automatic on failure** — when dsh crashes or fails to boot, the shell switches to the Recovery Center by itself: a rolling output snapshot (token-redacted) plus an automatic diagnosis that pinpoints the failing plugin when dsh names one, falling back to a plain "here's the log" when it can't
+- **Plugin rescue** — disable/enable writes the profile patch layer with whole-file validation and atomic replacement (it will never corrupt your hand-edited lines or leave the backend unbootable); uninstall/update runs the `dsh plugin` CLI with live logs. Host-critical modules are protected and refuse to be touched
+- **Version switching, unified** — upgrade and rollback share one list (npm global and git source, channel badges, current version pinned on top), with live progress and an automatic restart back to the normal page when done
+- **Single entry** — version maintenance lives here even when everything is fine: Settings → Desktop checks for updates, and confirming an update hands off to the Recovery Center (no scary diagnostics, just progress) — no terminal needed, ever
+
 ### Backend (dsh) integration
 
 - **Dual backend sources** — run the `dsh` from your npm global install (stable channel) or from a local git checkout (any version, including pre-releases), switchable in Settings. `Auto` mode prefers npm and falls back to the source directory; if the chosen source breaks, the shell falls back to the other one and tells you why
 - **Zero-intrusion wrapper** — spawns the chosen `dsh` as a child process (`dsh web`), loads its localhost UI; the harness source is never modified. One dsh shared by terminal and desktop — plugins, settings, credentials, sessions and versions always match (`DSH_HOME`, default `~/.dsh`)
 - **Source mode without terminals** — pick a folder and the shell drives everything: clone the official repo, run `pnpm install` + `pnpm build` with live logs, validate the result, then boot. The only prerequisites are `git` and `pnpm` on PATH
-- **Source-mode updates like npm's** — check the upstream tags, see "current → latest", then one click checks out the tag, reinstalls, rebuilds and restarts the backend. Dirty worktrees are refused with a clear message
+- **Source-mode updates without terminals either** — the shell checks the upstream tags, then one click checks out the chosen version, reinstalls, rebuilds and restarts the backend — the same pipeline the Recovery Center drives, just reached from Settings. Dirty worktrees are refused with a clear message
 - **One proxy for every update channel** — a single proxy setting covers git (clone/fetch), pnpm (install/build) and npm (check/upgrade); git uses per-invocation config, never touching your global gitconfig
 - **First-run setup page** — no dsh detected? The app offers a copyable install command, a one-click in-app install, or the source-mode path (clone + prepare), then boots automatically
-- **Version check stays on Desktop, update lands in Recovery Center** — Settings → Desktop checks for newer dsh (npm or git source); confirming the update hands off to the native Recovery Center with live progress, and the backend restarts automatically when done
 
 ### Desktop experience
 
@@ -44,7 +54,7 @@ A desktop shell for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-h
 - **Configurable port policy** — fixed `3080` by default (same as `dsh web`, giving a stable page origin so browser-side preferences survive restarts), switchable to a custom port or random in Settings; falls back to a random port with a notice when the fixed port is taken. Note: while the shell lives in the tray it holds the port — run `dsh web --port <other>` in a terminal to coexist
 - **Single instance** — launching again focuses the existing window
 - **Full plugin freedom** — dynamic plugins (`cordis_define`/`cordis_run`), `$DSH_HOME/cordis.patch.yml`, and the npm plugin ecosystem all work exactly as in the web edition
-- **Desktop settings section** — the app's Settings page gains a "Desktop" tab (styled to match the harness UI): backend source card (mode, directory validation, clone/prepare, proxy), dsh version card (source-aware check; confirming an update hands off to the Recovery Center with live progress), shell self-update check, auto-start toggle, launch-minimized toggle, port policy, About card
+- **Desktop settings section** — the app's Settings page gains a "Desktop" tab (styled to match the harness UI): backend source card (mode, directory validation, clone/prepare, proxy), dsh version card (source-aware check → hands updates to the Recovery Center), shell self-update check, auto-start toggle, launch-minimized toggle, port policy, About card
 - **Conversation width, natively** — the upstream drag handles do the job on supported dsh versions; the shell injects nothing
 - **Shell self-update (two-step)** — checks silently 15s after launch (detection only, never auto-downloads): a "Download update" button appears in Settings, switching to "Install update" once downloaded — every step is triggered by you. Windows installs by quitting and running the installer (unsigned builds can't install silently); Linux AppImage replaces itself automatically; macOS excluded (needs signing)
 
@@ -57,7 +67,6 @@ A desktop shell for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-h
 | ![Settings — general desktop options](./assets/screenshots/settings-desktop-1.png) | ![Settings — backend source, proxy and updates](./assets/screenshots/settings-desktop-2.png) |
 
 ![Recovery Center — version switching, plugin rescue and crash diagnosis in one page](./assets/screenshots/recovery-mode.png)
-
 
 ## dsh version support
 
@@ -132,29 +141,35 @@ The CI workflow (`.github/workflows/release.yml`) builds all three platforms on 
 
 - **Data** (`DSH_HOME`): defaults to `~/.dsh` (honors the `$DSH_HOME` environment variable) — profiles, sessions, storage; shared by both backend sources
 - **Logs**: `<userData>/logs/main.log`
-- **dsh**: the shell runs the backend from your chosen source — npm global (located via PATH + `npm root -g`, upgradable from Settings → Desktop) or a local checkout (validated for `apps/cli`, `node_modules/tsx` and the built web dist before launch)
+- **dsh**: the shell runs the backend from your chosen source — npm global (located via PATH + `npm root -g`, upgradable from Settings → Desktop) or a local checkout (validated before launch: manifest, `node_modules/tsx`, built web dist, and — for dsh ≥ 0.1.3 — the `fs-ext` dependency)
 
 ## Project layout
 
 ```
 src/
-  main.ts               app lifecycle: single-instance lock, window, tray, backend resolution, setup page
-  paths.ts              dev/prod resource resolution (icon, preload, desktop plugin patch)
+  main.ts               app lifecycle: single-instance lock, window, tray, backend resolution, recovery IPC, setup page
+  paths.ts              dev/prod resource resolution (icon, preload, desktop plugin patch, recovery page)
   dsh-locator.ts        locate the npm-global dsh CLI (PATH check + npm root -g) + semver compare
-  dsh-source.ts         git-checkout source: validation (manifest/tsx/web dist), tag parsing, entry args
+  dsh-versions.ts       backend version listing (npm versions × dist-tags → sorted, channel-tagged)
+  dsh-update-target.ts  npm dist-tags → update target (semver whitelist, prerelease-aware)
+  dsh-source.ts         git-checkout source: validation (manifest/tsx/web dist, fs-ext gate for dsh ≥ 0.1.3), tag parsing, entry args
   dsh-source-updater.ts source-channel updates: fetch tags → clean tree → checkout → pnpm install/build → restart
-  dsh-updater.ts        npm-channel backend: check npm latest / one-click npm i -g upgrade
+  dsh-updater.ts        npm-channel backend: check latest / install any version (upgrade or rollback)
+  dsh/spawn.ts          spawn dsh web --port <policy port> --patch; parse stdout URL line; output ring buffer; graceful stop
+  dsh/ready.ts          HTTP readiness probe (any status — the URL may carry a process token since 0.1.2-alpha.1)
+  recovery/             Recovery Center core: crash diagnosis, profile patch layer, plugin inventory & toggles, recovery state, theme matching, IPC origin guard
+  kill-tree.ts          subprocess-tree termination for timed-out maintenance commands
   settings.ts           shell settings (userData/settings.json — backend source, source dir, proxy, port policy)
   updater.ts            electron-updater (Windows guided / Linux AppImage auto)
-  dsh/spawn.ts          spawn dsh web --port <policy port> --patch; parse stdout URL line; graceful stop
-  dsh/ready.ts          HTTP readiness probe (any status — the URL may carry a process token since 0.1.2-alpha.1)
   tray.ts               tray menu (open / auto-start / quit) + autostart sync
   autostart.ts          auto-start (native on win/mac; XDG file on linux)
   preload.ts            contextBridge bridge (window controls + desktop IPC; compiled to CJS)
 scripts/
+  recovery-*.test.mjs   recovery test suite (8 suites, node --test on dist)
   install-runtime.mjs   generates resources/icon.png at build time (from upstream favicon)
   smoke.mjs             headless smoke test: spawn dsh, assert URL line + HTTP response
 resources/
+  recovery.html         Recovery Center page (vanilla, dual theme)
   desktop-integration/  settings "Desktop" section plugin (dsh browser half)
   desktop-patch.yml     shell-injected patch mounting the plugin
 assets/
