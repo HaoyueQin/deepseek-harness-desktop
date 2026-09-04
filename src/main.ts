@@ -35,7 +35,7 @@ import { listNpmVersions } from './dsh-versions.js'
 import { locateSourceDsh, validateSourceDir, OFFICIAL_REPO_URL } from './dsh-source.js'
 import { enterRecovery, getRecoveryContext, clearRecoveryContext } from './recovery/state.js'
 import { parseFailure, sanitizeLog } from './recovery/parse-failure.js'
-import { disablePlugin, enablePlugin, isImmutablePlugin, isValidPluginName, listPlugins, pluginCliArgs } from './recovery/plugins.js'
+import { disablePlugin, enablePlugin, isImmutablePlugin, isValidPluginName, listPlugins, parseOutdatedJson, pluginCliArgs } from './recovery/plugins.js'
 import { parseThemePreference } from './recovery/theme.js'
 // electron-updater 的 update-downloaded 事件带 downloadedFile（本地完整路径），
 // UpdateInfo.path 只是 latest.yml 里的相对文件名，spawn 会 ENOENT。
@@ -321,6 +321,25 @@ function registerAppIpc(): void {
     typeof name === 'string' && isValidPluginName(name) ? runPluginCli('remove', name) : { ok: false, error: 'invalid' })
   ipcMain.handle('plugins:update', (_event, name: unknown) =>
     typeof name === 'string' && isValidPluginName(name) ? runPluginCli('update', name) : { ok: false, error: 'invalid' })
+  // 插件最新版本（pnpm outdated --json，只读不装、不停后端）：pnpm 缺失/网络失败/
+  // 超时都返回空表，页面降级为只显示当前版本
+  ipcMain.handle('plugins:outdated', async () => {
+    const profileDir = join(dshHomeDir(), 'profiles', 'web')
+    return new Promise<Record<string, string>>((resolve) => {
+      const isWin = process.platform === 'win32'
+      const child = spawn(isWin ? process.env.ComSpec ?? 'cmd' : 'pnpm',
+        isWin ? ['/d', '/s', '/c', 'pnpm outdated --json'] : ['outdated', '--json'],
+        { cwd: profileDir, env: { ...process.env, ...networkProxyEnv() }, windowsHide: true })
+      let out = ''
+      const timer = setTimeout(() => {
+        try { child.kill('SIGKILL') } catch { /* 已退出 */ }
+        resolve(parseOutdatedJson(out))
+      }, 45_000)
+      child.stdout?.on('data', (d: Buffer) => { out += d.toString() })
+      child.on('error', () => { clearTimeout(timer); resolve({}) })
+      child.on('exit', () => { clearTimeout(timer); resolve(parseOutdatedJson(out)) })
+    })
+  })
   // 后端来源配置：读取（含源码目录校验结果）/保存/选目录/重启生效
   ipcMain.handle('dsh-backend:get-config', () => {
     const dir = getSourceDir()

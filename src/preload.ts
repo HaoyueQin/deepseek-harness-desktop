@@ -91,6 +91,7 @@ contextBridge.exposeInMainWorld('dshDesktop', {
       ipcRenderer.invoke('plugins:remove', name),
     update: (name: string): Promise<{ ok: boolean; busy?: boolean; error?: string }> =>
       ipcRenderer.invoke('plugins:update', name),
+    outdated: (): Promise<Record<string, string>> => ipcRenderer.invoke('plugins:outdated'),
   },
   setup: {
     copyCommand: (): Promise<boolean> => ipcRenderer.invoke('dsh-setup:copy-command'),

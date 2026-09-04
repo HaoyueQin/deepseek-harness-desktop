@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { listPlugins } from '../dist/recovery/plugins.js'
+import { listPlugins, parseOutdatedJson } from '../dist/recovery/plugins.js'
 
 const tmp = mkdtempSync(join(tmpdir(), 'dsh-plugins-test-'))
 const web = join(tmp, 'profiles', 'web')
@@ -43,6 +43,21 @@ assert.equal(byName['dshmarket'].inBundles, false)
 assert.equal(byName['dshmarket'].protected, false)
 assert.equal(byName['@deepseek-ai/dsh-base'].official, true)
 assert.equal(byName['dsh-desktop-integration'].system, true)
+
+// --- parseOutdatedJson：真实 pnpm 输出形态（dependencies 取 latest，devDeps 过滤）---
+{
+  const sample = JSON.stringify({
+    'deepseek-harness-background': { current: '0.5.0', latest: '0.5.3', wanted: '0.5.0', isDeprecated: false, dependencyType: 'dependencies' },
+    electron: { current: '43.4.0', latest: '44.1.1', wanted: '43.4.0', isDeprecated: false, dependencyType: 'devDependencies' },
+  })
+  assert.deepEqual(parseOutdatedJson(sample), { 'deepseek-harness-background': '0.5.3' })
+}
+// 无过期 / 非法 / 非对象输出 → 空表（pnpm 有过期时 exit 1，解析不依赖 exit code）
+assert.deepEqual(parseOutdatedJson('{}'), {})
+assert.deepEqual(parseOutdatedJson(''), {})
+assert.deepEqual(parseOutdatedJson('not json'), {})
+assert.deepEqual(parseOutdatedJson('[]'), {})
+assert.deepEqual(parseOutdatedJson(JSON.stringify({ x: { latest: '1.0.0', dependencyType: 'dependencies' } })), { x: '1.0.0' })
 
 rmSync(tmp, { recursive: true, force: true })
 console.log('recovery-plugins OK')

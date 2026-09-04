@@ -119,3 +119,26 @@ export function isImmutablePlugin(name: string): boolean {
 export function isValidPluginName(name: string): boolean {
   return /^(@[a-zA-Z0-9][a-zA-Z0-9._-]*\/)?[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(name)
 }
+
+/**
+ * 解析 `pnpm outdated --json` 输出为 { 插件名: latest 版本 }。
+ * 只取生产 dependencies（devDependencies 等不属于插件清单）；非法/空输出
+ * 返回空表。pnpm 有过期条目时 exit 1、无条目时输出 {}——解析不依赖 exit code。
+ */
+export function parseOutdatedJson(text: string): Record<string, string> {
+  const result: Record<string, string> = {}
+  let data: unknown
+  try {
+    data = JSON.parse(text)
+  } catch {
+    return result
+  }
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) return result
+  for (const [name, info] of Object.entries(data as Record<string, unknown>)) {
+    if (typeof info !== 'object' || info === null) continue
+    const entry = info as { latest?: unknown; dependencyType?: unknown }
+    if (entry.dependencyType !== 'dependencies') continue
+    if (typeof entry.latest === 'string' && entry.latest !== '') result[name] = entry.latest
+  }
+  return result
+}
