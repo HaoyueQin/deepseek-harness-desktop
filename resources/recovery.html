@@ -95,7 +95,7 @@
   .prow:last-child { border-bottom: none; }
   .prow .pname { font-family: Consolas, monospace; color: var(--text); flex: 1; }
   .prow .pdesc { color: var(--faint); font-size: 12px; }
-  .prow button.act { padding: 3px 12px; font-size: 12px; }
+  .prow button.act { padding: 3px 12px; font-size: 12px; min-width: 88px; }
 </style>
 </head>
 <body>
@@ -431,9 +431,11 @@
 
   function renderPluginList(ps) {
     const list = $('plugin-list')
-    list.textContent = ''
     if (ps.length === 0) { list.textContent = '未安装第三方插件'; return }
-    for (const p of ps) list.appendChild(pluginRow(p))
+    // DocumentFragment + replaceChildren 原子替换：杜绝清空后逐行插入的闪烁
+    const frag = document.createDocumentFragment()
+    for (const p of ps) frag.appendChild(pluginRow(p))
+    list.replaceChildren(frag)
   }
 
   async function loadPlugins() {
@@ -454,7 +456,7 @@
   async function togglePlugin(p, btn, enable) {
     if (pluginBusy) return
     const label = enable ? '启用' : '禁用'
-    if (!enable && !window.confirm('禁用插件 ' + p.name + '？该插件将不再加载（可随时重新启用）。')) return
+    // 禁用/启用可逆、无破坏性：不弹确认，直接执行；列表刷新后的状态变化即反馈
     pluginBusy = true
     btn.disabled = true
     btn.textContent = label + '中…'
@@ -462,7 +464,6 @@
       const r = enable ? await bridge.plugins.enable(p.name) : await bridge.plugins.disable(p.name)
       if (r.ok !== true) { alert(label + '失败：' + (r.reason ?? '未知原因')); return }
       await loadPlugins()
-      alert('已' + label + '，点「重启 dsh 并返回」生效' + (r.applied.length > 0 ? '（行：' + r.applied.join('、') + '）' : ''))
     } finally {
       pluginBusy = false
       btn.disabled = false
@@ -470,13 +471,29 @@
     }
   }
 
+  // 卸载/更新两段式确认：首次点击进入待确认态（按钮变警告色 + 「确认卸载？」），
+  // 5 秒内再次点击才执行，超时自动复位——确认留在窗口内，不弹系统对话框。
+  function disarmCli(btn, label) {
+    btn.dataset.armed = ''
+    btn.textContent = label
+    btn.style.color = ''
+    btn.style.borderColor = ''
+  }
+
   async function cliPlugin(p, btn, action) {
     if (pluginBusy) return
     const label = action === 'remove' ? '卸载' : '更新'
-    const desc = action === 'remove'
-      ? '将卸载插件 ' + p.name + '（从 profile 移除）。'
-      : '将更新插件 ' + p.name + '（检查并安装最新兼容版本）。'
-    if (!window.confirm(label + '插件 ' + p.name + '？' + desc)) return
+    if (btn.dataset.armed !== '1') {
+      btn.dataset.armed = '1'
+      btn.textContent = '确认' + label + '？'
+      btn.style.color = 'var(--bad)'
+      btn.style.borderColor = 'var(--bad)'
+      if (btn._armTimer) clearTimeout(btn._armTimer)
+      btn._armTimer = setTimeout(() => { disarmCli(btn, label) }, 5000)
+      return
+    }
+    if (btn._armTimer) clearTimeout(btn._armTimer)
+    disarmCli(btn, label)
     pluginBusy = true
     btn.disabled = true
     btn.textContent = label + '中…'
