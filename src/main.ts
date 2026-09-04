@@ -746,6 +746,12 @@ function registerRecoveryIpc(): void {
     clipboard.writeText(JSON.stringify(c, null, 2))
     return { ok: true }
   })
+  // 手动进入恢复中心（设置页入口）：maintenance 语义——无诊断结论，版本区/插件区可用
+  ipcMain.handle('recovery:open', () => {
+    buildRecoveryContext('maintenance', null, null, '')
+    void showRecoveryPage()
+    return { ok: true }
+  })
 }
 
 /** 引导安装 IPC：复制命令 / 壳内一键安装 / 重新检测。 */

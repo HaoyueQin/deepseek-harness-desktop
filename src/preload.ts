@@ -127,5 +127,6 @@ contextBridge.exposeInMainWorld('dshDesktop', {
       ipcRenderer.invoke('recovery:open-log-file'),
     copyDiagnosis: (): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke('recovery:copy-diagnosis'),
+    open: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('recovery:open'),
   },
 })
