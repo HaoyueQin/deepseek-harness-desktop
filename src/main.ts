@@ -35,6 +35,7 @@ import { listNpmVersions } from './dsh-versions.js'
 import { locateSourceDsh, validateSourceDir, OFFICIAL_REPO_URL } from './dsh-source.js'
 import { enterRecovery, getRecoveryContext, clearRecoveryContext } from './recovery/state.js'
 import { parseFailure, sanitizeLog } from './recovery/parse-failure.js'
+import { disablePlugin, enablePlugin, listPlugins, pluginCliArgs } from './recovery/plugins.js'
 import { parseThemePreference } from './recovery/theme.js'
 // electron-updater 的 update-downloaded 事件带 downloadedFile（本地完整路径），
 // UpdateInfo.path 只是 latest.yml 里的相对文件名，spawn 会 ENOENT。
@@ -71,6 +72,8 @@ let dshPortActual: number | null = null
 let dshPortDegraded = false
 /** 版本切换（dsh-backend:install-version）进行中标志：与 sourceBusy/isSourceUpdating 互斥。 */
 let versionBusy = false
+/** 插件 CLI 操作（remove/update）进行中标志：与 sourceBusy/versionBusy 互斥。 */
+let pluginsBusy = false
 
 /**
  * 组装恢复上下文：快照脱敏 + 解析诊断（handover §7.3 数据流）。
@@ -259,6 +262,53 @@ function registerAppIpc(): void {
       versionBusy = false
     }
   })
+  // 插件救火区：清单/禁用/启用（纯文件，dsh 崩溃态可用）
+  ipcMain.handle('plugins:list', () => listPlugins(join(dshHomeDir(), 'profiles', 'web')))
+  ipcMain.handle('plugins:disable', async (_event, name: unknown) => {
+    if (typeof name !== 'string' || name === '') return { ok: false, applied: [], disabledCount: 0, reason: 'invalid' }
+    return disablePlugin(join(dshHomeDir(), 'profiles', 'web'), name)
+  })
+  ipcMain.handle('plugins:enable', async (_event, name: unknown) => {
+    if (typeof name !== 'string' || name === '') return { ok: false, applied: [], disabledCount: 0, reason: 'invalid' }
+    return enablePlugin(join(dshHomeDir(), 'profiles', 'web'), name)
+  })
+  // 卸载/更新：dsh plugin CLI 编排——停后端防文件锁 → spawn → 重启
+  const runPluginCli = async (action: 'remove' | 'update', name: string): Promise<{ ok: boolean; busy?: boolean; error?: string }> => {
+    if (pluginsBusy || sourceBusy || versionBusy || isSourceUpdating()) return { ok: false, busy: true }
+    if (locatedDsh === null) return { ok: false, error: '后端未定位，无法执行插件操作' }
+    pluginsBusy = true
+    const push = (t: string): void => { if (!quitting) win?.webContents.send('recovery:log', t) }
+    try {
+      push('\r\n[shell] 停止后端，准备执行 dsh plugin ' + action + ' ' + name + '…\r\n')
+      if (dsh !== null) { await dsh.stop(); dsh = null }
+      push('\r\n[shell] dsh plugin ' + action + ' ' + name + '…\r\n')
+      const child = spawn('node', [locatedDsh.binJs, ...(locatedDsh.nodeArgs ?? []), ...pluginCliArgs(action, name)], {
+        cwd: locatedDsh.cwd ?? undefined,
+        env: { ...process.env, ...networkProxyEnv() },
+        windowsHide: true,
+      })
+      let lastOut = ''
+      child.stdout?.on('data', (d: Buffer) => { const s = d.toString(); lastOut = s; push(s) })
+      child.stderr?.on('data', (d: Buffer) => { const s = d.toString(); lastOut = s; push(s) })
+      const code: number | null = await new Promise((resolve) => child.on('exit', resolve))
+      if (code !== 0) {
+        push('\r\n[shell] ✗ 插件操作失败（exit=' + String(code) + '）：' + lastOut.slice(-300) + '\r\n')
+        throw new Error('dsh plugin ' + action + ' 失败（exit ' + String(code) + '）')
+      }
+      push('\r\n[shell] ✓ 已完成，重启后端…\r\n')
+      await restartEffectiveBackend()
+      return { ok: true }
+    } catch (err) {
+      log('plugins:' + action + ' 失败 ' + String(err))
+      return { ok: false, error: String(err) }
+    } finally {
+      pluginsBusy = false
+    }
+  }
+  ipcMain.handle('plugins:remove', (_event, name: unknown) =>
+    typeof name === 'string' && name !== '' ? runPluginCli('remove', name) : { ok: false, error: 'invalid' })
+  ipcMain.handle('plugins:update', (_event, name: unknown) =>
+    typeof name === 'string' && name !== '' ? runPluginCli('update', name) : { ok: false, error: 'invalid' })
   // 后端来源配置：读取（含源码目录校验结果）/保存/选目录/重启生效
   ipcMain.handle('dsh-backend:get-config', () => {
     const dir = getSourceDir()

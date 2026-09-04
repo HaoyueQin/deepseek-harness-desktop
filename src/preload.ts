@@ -81,6 +81,17 @@ contextBridge.exposeInMainWorld('dshDesktop', {
       return () => ipcRenderer.removeListener('recovery:log', handler)
     },
   },
+  plugins: {
+    list: (): Promise<unknown> => ipcRenderer.invoke('plugins:list'),
+    disable: (name: string): Promise<{ ok: boolean; applied: string[]; disabledCount: number; reason?: string | null }> =>
+      ipcRenderer.invoke('plugins:disable', name),
+    enable: (name: string): Promise<{ ok: boolean; applied: string[]; disabledCount: number; reason?: string | null }> =>
+      ipcRenderer.invoke('plugins:enable', name),
+    remove: (name: string): Promise<{ ok: boolean; busy?: boolean; error?: string }> =>
+      ipcRenderer.invoke('plugins:remove', name),
+    update: (name: string): Promise<{ ok: boolean; busy?: boolean; error?: string }> =>
+      ipcRenderer.invoke('plugins:update', name),
+  },
   setup: {
     copyCommand: (): Promise<boolean> => ipcRenderer.invoke('dsh-setup:copy-command'),
     install: (): Promise<boolean> => ipcRenderer.invoke('dsh-setup:install'),
