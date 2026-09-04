@@ -6,7 +6,7 @@
  * 自家子进程 stdout 解析，无外部输入进入 webPreferences。
  */
 
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, shell } from 'electron'
 import { startDsh, isTcpPortFree, type DshControl } from './dsh/spawn.js'
 import { createTray, syncTrayAutostart, type TrayHandlers } from './tray.js'
 import { dshHomeDir, iconPath, preloadPath, recoveryPagePath, resourcesDir } from './paths.js'
@@ -22,22 +22,25 @@ import {
   downloadUpdate, installUpdate, setRunInstaller,
 } from './updater.js'
 import {
-  checkBackendUpdate, initBackendUpdater,
-  onBackendUpdateStatus, setBackendRestartHandler, updateBackend,
+  checkBackendUpdate, fetchNpmVersions, initBackendUpdater, installBackendVersion,
+  onBackendUpdateStatus, setBackendLogSink, setBackendRestartHandler, updateBackend,
 } from './dsh-updater.js'
 import {
-  checkSourceUpdate, initSourceUpdater, isSourceUpdating, onSourceUpdateStatus,
+  checkSourceUpdate, initSourceUpdater, installSourceVersion, isSourceUpdating,
+  listSourceVersions, onSourceUpdateStatus,
   setSourceLogSink, setSourceUpdateHooks, updateSource,
 } from './dsh-source-updater.js'
 import { locateDsh, type LocatedDsh } from './dsh-locator.js'
+import { listNpmVersions } from './dsh-versions.js'
 import { locateSourceDsh, validateSourceDir, OFFICIAL_REPO_URL } from './dsh-source.js'
 import { enterRecovery, getRecoveryContext, clearRecoveryContext } from './recovery/state.js'
 import { parseFailure, sanitizeLog } from './recovery/parse-failure.js'
+import { parseThemePreference } from './recovery/theme.js'
 // electron-updater 的 update-downloaded 事件带 downloadedFile（本地完整路径），
 // UpdateInfo.path 只是 latest.yml 里的相对文件名，spawn 会 ENOENT。
 import type { UpdateDownloadedEvent } from 'electron-updater'
 import { join } from 'node:path'
-import { copyFileSync, existsSync, mkdirSync, readdirSync, renameSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync } from 'node:fs'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { desktopPluginDir } from './paths.js'
 import { log } from './log.js'
@@ -627,6 +630,17 @@ async function restartEffectiveBackend(): Promise<void> {
 function registerRecoveryIpc(): void {
   let restarting = false
   ipcMain.handle('recovery:get-state', () => getRecoveryContext())
+  // 恢复页主题：读 dsh ui-theme 偏好（$DSH_HOME/settings.yaml）；文件缺失/
+  // 解析失败 → null，页面侧不设 data-theme，走 CSS prefers-color-scheme
+  // 跟随系统（优雅降级）。dsh 崩溃后无法向活体查询，只能直接读文件。
+  ipcMain.handle('recovery:get-theme', () => {
+    let text = ''
+    try { text = readFileSync(join(dshHomeDir(), 'settings.yaml'), 'utf8') } catch { /* 缺失/不可读 → 降级 */ }
+    return {
+      preference: parseThemePreference(text),
+      systemDark: nativeTheme.shouldUseDarkColors,
+    }
+  })
   ipcMain.handle('recovery:exit-restart', async () => {
     if (restarting) return { ok: false, busy: true }
     restarting = true
