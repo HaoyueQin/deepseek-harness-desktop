@@ -73,7 +73,7 @@ dsh 迭代快、偶有破坏性变更，而插件的适配往往滞后——一�
 | dsh 版本 | 使用 |
 | --- | --- |
 | **≥ 0.1.2-rc.1** | 本版本桌面壳 |
-| 更旧的任意版本（0.1.0/0.1.1、各 alpha） | 下载**旧版本桌面壳**——见 [Releases](https://github.com/HaoyueQin/deepseek-harness-desktop/releases) 页面 |
+| 更旧的任意版本（0.1.0/0.1.1、0.1.2 各 alpha 及更早） | 下载**旧版本桌面壳**——见 [Releases](https://github.com/HaoyueQin/deepseek-harness-desktop/releases) 页面 |
 
 本桌面壳不再适配 0.1.2-rc.1 之前的 dsh 版本。用 `dsh --version` 自查后端版本；
 若过旧，可升级 dsh（`npm i -g @deepseek-ai/dsh@next`——当前 0.1.2-rc.1 发布在 npm `next` 渠道；

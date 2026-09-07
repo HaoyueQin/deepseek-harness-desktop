@@ -73,7 +73,7 @@ The Recovery Center is the shell's answer — a native page that turns a broken 
 | dsh version | use |
 | --- | --- |
 | **≥ 0.1.2-rc.1** | this shell release |
-| anything older (0.1.0/0.1.1, any alpha) | an **older shell release** — download it from the [Releases](https://github.com/HaoyueQin/deepseek-harness-desktop/releases) page |
+| anything older (0.1.0/0.1.1, 0.1.2 alphas and earlier) | an **older shell release** — download it from the [Releases](https://github.com/HaoyueQin/deepseek-harness-desktop/releases) page |
 
 This shell no longer adapts to dsh versions before 0.1.2-rc.1. Check your backend with
 `dsh --version`; if it is too old, either update dsh (`npm i -g @deepseek-ai/dsh@next`
