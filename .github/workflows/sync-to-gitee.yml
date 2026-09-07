@@ -1,14 +1,15 @@
 name: Sync to Gitee
 
-# GitHub 为主仓，Gitee 只读镜像：push 代码自动镜像，发布 Release 自动同步。
+# GitHub 为主仓，Gitee 只读镜像：push 代码自动镜像，发布/编辑 Release 自动同步。
+# 同步内容：tag、标题、说明正文、预发布标记（安装包体积大，仅留 GitHub 下载）。
 # 需要在 GitHub 仓库 Settings > Secrets and variables > Actions 中添加：
-#   GITEE_PRIVATE_TOKEN = Gitee 私人令牌（需 projects + issues + pull_requests 权限）
+#   GITEE_PRIVATE_TOKEN = Gitee 私人令牌（需 projects 权限）
 
 on:
   push:
     branches: [main]
   release:
-    types: [published]
+    types: [published, edited]
   workflow_dispatch:
 
 jobs:
@@ -41,16 +42,30 @@ jobs:
           git push gitee --tags
         env:
           GITEE_PRIVATE_TOKEN: ${{ secrets.GITEE_PRIVATE_TOKEN }}
-      - name: Create Gitee release (notes only, binaries stay on GitHub)
+      - name: Sync release to Gitee (create or update)
         run: |
-          TAG="${{ github.event.release.tag_name }}"
-          OWNER_REPO="${{ github.repository }}"
+          API="https://gitee.com/api/v5/repos/${OWNER_REPO}"
+          [ -z "$REL_NAME" ] && REL_NAME="$REL_TAG"
+          [ "$REL_PRE" = "true" ] || REL_PRE="false"
           NOTES_FILE="$(mktemp)"
-          printf '%s' "${{ github.event.release.body }}" > "$NOTES_FILE"
+          printf '%s' "$REL_BODY" > "$NOTES_FILE"
           NOTE="> 📦 安装包请前往 GitHub Release 页下载，Gitee 镜像仅保留版本说明。"
           FULL="$(printf '%s\n\n%s' "$NOTE" "$(cat "$NOTES_FILE")")"
-          PAYLOAD="$(jq -n --arg tag "$TAG" --arg body "$FULL" '{tag_name:$tag,name:$tag,body:$body,target_commitish:$tag,prerelease:false}')"
-          RID="$(curl -sS -X POST "https://gitee.com/api/v5/repos/${OWNER_REPO}/releases?access_token=${GITEE_PRIVATE_TOKEN}" -H 'Content-Type: application/json' -d "$PAYLOAD" | jq -r .id)"
-          echo "Gitee release id: $RID"
+          PAYLOAD="$(jq -n --arg tag "$REL_TAG" --arg name "$REL_NAME" --arg body "$FULL" --argjson pre "$REL_PRE" '{tag_name:$tag,name:$name,body:$body,target_commitish:$tag,prerelease:$pre}')"
+          echo "$PAYLOAD" | grep -q '"name"' || { echo 'bad payload'; exit 1; }
+          RID="$(curl -sS "${API}/releases/tags/${REL_TAG}?access_token=${GITEE_PRIVATE_TOKEN}" | jq -r '.id // empty')"
+          if [ -z "$RID" ]; then
+            RID="$(curl -sS --fail -X POST "${API}/releases?access_token=${GITEE_PRIVATE_TOKEN}" -H 'Content-Type: application/json' -d "$PAYLOAD" | jq -r .id)"
+            echo "Created Gitee release id: $RID"
+          else
+            curl -sS --fail -X PATCH "${API}/releases/${RID}?access_token=${GITEE_PRIVATE_TOKEN}" -H 'Content-Type: application/json' -d "$PAYLOAD" > /dev/null
+            echo "Updated Gitee release id: $RID"
+          fi
+          case "$RID" in ''|null) echo 'no release id, abort'; exit 1;; esac
         env:
           GITEE_PRIVATE_TOKEN: ${{ secrets.GITEE_PRIVATE_TOKEN }}
+          OWNER_REPO: ${{ github.repository }}
+          REL_TAG: ${{ github.event.release.tag_name }}
+          REL_NAME: ${{ github.event.release.name }}
+          REL_BODY: ${{ github.event.release.body }}
+          REL_PRE: ${{ github.event.release.prerelease }}
