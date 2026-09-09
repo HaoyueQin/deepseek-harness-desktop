@@ -70,3 +70,15 @@ test('dist-tags：无 latest 稳定 tag 时按预发布标记；空对象无更�
   assert.deepEqual(resolveUpdateTarget({ alpha: '0.1.2-alpha.2' }, '0.1.1-rc.2'), { version: '0.1.2-alpha.2', prerelease: true })
   assert.equal(resolveUpdateTarget({}, '0.1.1-rc.2'), null)
 })
+
+test('构建元数据不参与比较（semver：+build 忽略）', () => {
+  assert.equal(compareVersions('0.1.5-alpha.1+build', '0.1.5-alpha.1'), 0)
+  assert.equal(compareVersions('1.0.0+build', '1.0.0'), 0)
+  assert.equal(compareVersions('0.1.5-alpha.1+build.1', '0.1.5-alpha.1+build.2'), 0)
+})
+
+test('多段横线预发布不断尾（首个 - 之后全为 prerelease）', () => {
+  // 'alpha.1-extra' 的第二段含横线：字母数字段按字典序高于纯数字 '1'（semver：数字低于字母）。
+  assert.equal(compareVersions('0.1.5-alpha.1-extra', '0.1.5-alpha.1') > 0, true)
+  assert.equal(compareVersions('0.1.5-alpha.1', '0.1.5-alpha.1-extra') < 0, true)
+})

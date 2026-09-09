@@ -445,6 +445,8 @@
 
   function renderPluginList(ps) {
     const list = $('plugin-list')
+    // 主进程拒绝（非恢复面）时返回对象而非数组：显式收敛，避免 for..of 抛错进 catch 前白屏闪烁。
+    if (!Array.isArray(ps)) { list.textContent = '插件清单获取失败：无权访问'; return }
     if (ps.length === 0) { list.textContent = '未安装第三方插件'; return }
     // DocumentFragment + replaceChildren 原子替换：杜绝清空后逐行插入的闪烁
     const frag = document.createDocumentFragment()

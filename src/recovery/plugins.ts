@@ -25,8 +25,13 @@ export const DESKTOP_SYSTEM_COMPONENT = 'dsh-desktop-integration'
  */
 export const RESERVED_PROFILES = ['desktop'] as const
 
-/** 是否为官方独占 profile（大小写不敏感）。 */
+/**
+ * 是否为官方独占 profile（大小写不敏感，与上游 `rejectElectronProfile` 同语义）。
+ * 刻意不 trim/归一化：与上游精确相等保持 parity；profileDir 非 IPC 可控，
+ * 生产调用方恒传 `basename`（string），非 string 输入一律返回 false。
+ */
 export function isReservedProfile(name: string): boolean {
+  if (typeof name !== 'string') return false
   return (RESERVED_PROFILES as readonly string[]).includes(name.toLowerCase())
 }
 

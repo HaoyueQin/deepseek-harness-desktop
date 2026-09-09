@@ -84,7 +84,7 @@ dsh 迭代快、偶有破坏性变更，而插件的适配往往滞后——一�
 ### 前置条件
 
 - **npm 渠道（默认）**：Node.js ≥ 22 与 dsh CLI（`npm i -g @deepseek-ai/dsh`）——若未安装，应用会显示引导页，提供可复制命令或壳内一键安装
-- **源码渠道（可选）**：额外要求 PATH 里有 `git` 与 `pnpm`；克隆仓库与 `pnpm install` + `pnpm build` 均由壳代劳——运行 dsh 0.1.3.x 源码还需 C++ 构建工具链（Windows：Visual Studio Build Tools，「使用 C++ 的桌面开发」工作负载），用于编译 `fs-ext` 依赖；dsh ≥ 0.1.5-alpha.1 改用预构建 `node-addon-system`，不再需要
+- **源码渠道（可选）**：额外要求 PATH 里有 `git` 与 `pnpm`；克隆仓库与 `pnpm install` + `pnpm build` 均由壳代劳——运行 dsh 0.1.3.x 源码还需 C++ 构建工具链（Windows：Visual Studio Build Tools，「使用 C++ 的桌面开发」工作负载），用于编译 `fs-ext` 依赖；dsh 0.1.5-alpha.1 起改用预构建 `node-addon-system`，不再需要
 
 ### 下载
 
@@ -112,7 +112,7 @@ dsh 迭代快、偶有破坏性变更，而插件的适配往往滞后——一�
 ## 开发
 
 ```sh
-npm install        # 安装 electron 43 及工具链
+npm install        # 安装 electron 43 及构建依赖
 npm run dev        # dev 模式：系统 Node + 你所选的后端（npm 或源码目录）
 ```
 
@@ -140,7 +140,7 @@ CI 工作流（`.github/workflows/release.yml`）在每个 `v*` tag 上构建全
 
 - **数据**（`DSH_HOME`）：默认 `~/.dsh`（尊重 `$DSH_HOME` 环境变量）— profile、会话、存储；两种后端来源共享
 - **日志**：`<userData>/logs/main.log`
-- **dsh**：壳从你所选的来源运行后端 — npm 全局（PATH + `npm root -g` 定位，可在设置 → 桌面一键升级）或本地检出（启动前校验 manifest、`node_modules/tsx`、已构建的前端 dist，dsh 0.1.3.x 还会校验 `fs-ext` 依赖）
+- **dsh**：壳从你所选的来源运行后端 — npm 全局（PATH + `npm root -g` 定位，可在设置 → 桌面一键升级）或本地检出（启动前校验 manifest、`node_modules/tsx`、已构建的前端 dist，仅 dsh 0.1.3.x 还会校验 `fs-ext` 依赖）
 
 ## 项目结构
 
@@ -151,7 +151,7 @@ src/
   dsh-locator.ts        定位 npm 全局的 dsh CLI（PATH 验证 + npm root -g）+ semver 比较
   dsh-versions.ts       后端版本清单（npm versions × dist-tags → 排序、渠道标注）
   dsh-update-target.ts  npm dist-tags → 更新目标（semver 白名单，预发布感知）
-  dsh-source.ts         git 源码来源：目录校验（manifest/tsx/web dist，dsh 0.1.3.x 的 fs-ext 门控）、tag 解析、启动参数
+  dsh-source.ts         git 源码来源：目录校验（manifest/tsx/web dist，仅 dsh 0.1.3.x 的 fs-ext 门控）、tag 解析、启动参数
   dsh-source-updater.ts 源码渠道更新：拉取 tag → 干净工作区 → 检出 → pnpm install/build → 重启
   dsh-updater.ts        npm 渠道后端：检查最新版 / 安装任意版本（升级或回退）
   dsh/spawn.ts          spawn dsh web --port <策略端口> --patch，解析 stdout URL 行，输出环形缓冲，优雅停止

@@ -303,7 +303,10 @@ function registerAppIpc(): void {
       push('\r\n[shell] 停止后端，准备执行 dsh plugin ' + action + ' ' + name + '…\r\n')
       if (dsh !== null) { await dsh.stop(); dsh = null }
       push('\r\n[shell] dsh plugin ' + action + ' ' + name + '…\r\n')
-      const child = spawn('node', [locatedDsh.binJs, ...(locatedDsh.nodeArgs ?? []), ...pluginCliArgs(action, name)], {
+      // node 旗标必须在脚本之前：`node --import tsx/esm <bin> plugin …`；
+      // 源码渠道 nodeArgs 为 ['--import', 'tsx/esm']，错序（bin 在前）会使 tsx
+      // 不加载、plugin 操作必败（对照 dsh/spawn.ts 的 [...nodeArgs, dshBin, 'web', …]）。
+      const child = spawn('node', [...(locatedDsh.nodeArgs ?? []), locatedDsh.binJs, ...pluginCliArgs(action, name)], {
         cwd: locatedDsh.cwd ?? undefined,
         env: { ...process.env, ...networkProxyEnv() },
         windowsHide: true,

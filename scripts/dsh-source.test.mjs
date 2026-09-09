@@ -4,15 +4,25 @@
  * 用法：npm run build && node --test scripts/dsh-source.test.mjs
  */
 import assert from 'node:assert/strict'
-import { test } from 'node:test'
+import { after, test } from 'node:test'
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pickLatestTag, sourceEntryArgs, tagVersion, validateSourceDir } from '../dist/dsh-source.js'
 
+/** 本文件创建的临时目录：after 统一清理，避免 /tmp 堆积。 */
+const createdDirs = []
+after(() => {
+  for (const d of createdDirs) rmSync(d, { recursive: true, force: true })
+})
+function track(dir) {
+  createdDirs.push(dir)
+  return dir
+}
+
 /** 造一个"完整可启动"的最小源码目录骨架，测试按需删件。 */
 function makeSourceDir(mutate) {
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-src-test-'))
+  const dir = track(mkdtempSync(join(tmpdir(), 'dsh-src-test-')))
   mkdirSync(join(dir, 'apps', 'cli'), { recursive: true })
   writeFileSync(join(dir, 'apps', 'cli', 'package.json'), JSON.stringify({ version: '0.1.2-alpha.1' }))
   mkdirSync(join(dir, 'node_modules', 'tsx'), { recursive: true })
@@ -38,8 +48,8 @@ test('无 .git：仍可启动，但有在线更新警告', () => {
   assert.match(v.warnings[0], /git 仓库/)
 })
 
-test('空目录：ok=false，三项缺失并列出', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-src-test-'))
+test('空目录：ok=false，三项缺失并列出（空 version 不触发 fs-ext 第四项）', () => {
+  const dir = track(mkdtempSync(join(tmpdir(), 'dsh-src-test-')))
   const v = validateSourceDir(dir)
   assert.equal(v.ok, false)
   assert.equal(v.version, '')
@@ -80,7 +90,9 @@ test('dsh 0.1.3-alpha.2 缺 fs-ext：同样阻断（两 0.1.3 版本都要 fs-ex
   })
   const v = validateSourceDir(dir)
   assert.equal(v.ok, false)
+  assert.equal(v.missing.length, 1)
   assert.match(v.missing[0], /fs-ext/)
+  assert.match(v.missing[0], /pnpm install/)
 })
 
 test('dsh 0.1.3.x pnpm store 有 fs-ext：不报缺失', () => {
@@ -101,6 +113,88 @@ test('dsh 0.1.5-alpha.1 无 fs-ext：不阻断（改用 prebuilt node-addon-syst
   const v = validateSourceDir(dir)
   assert.equal(v.ok, true)
   assert.deepEqual(v.missing, [])
+  // 门控只写 missing 不写 warnings：骨架无 .git，warnings 恒为 1（在线更新提示）。
+  assert.equal(v.warnings.length, 1)
+})
+
+test('dsh 0.1.3 正式版缺 fs-ext：同样阻断（0.1.3.x 行）', () => {
+  const dir = makeSourceDir((d) => {
+    writeFileSync(join(d, 'apps', 'cli', 'package.json'), JSON.stringify({ version: '0.1.3' }))
+  })
+  const v = validateSourceDir(dir)
+  assert.equal(v.ok, false)
+  assert.equal(v.missing.length, 1)
+  assert.match(v.missing[0], /fs-ext/)
+})
+
+test('dsh 0.1.3-alpha.2 有 fs-ext：不报缺失（与 alpha.1 对称）', () => {
+  const dir = makeSourceDir((d) => {
+    writeFileSync(join(d, 'apps', 'cli', 'package.json'), JSON.stringify({ version: '0.1.3-alpha.2' }))
+    mkdirSync(join(d, 'node_modules', '.pnpm', 'fs-ext@2.1.1'), { recursive: true })
+  })
+  const v = validateSourceDir(dir)
+  assert.equal(v.ok, true)
+  assert.deepEqual(v.missing, [])
+})
+
+test('dsh 0.1.4 缺 fs-ext：阻断（fail-closed：尚无该 tag，按区间要求，发布后按 lease 复核）', () => {
+  const dir = makeSourceDir((d) => {
+    writeFileSync(join(d, 'apps', 'cli', 'package.json'), JSON.stringify({ version: '0.1.4-alpha.1' }))
+  })
+  const v = validateSourceDir(dir)
+  assert.equal(v.ok, false)
+  assert.equal(v.missing.length, 1)
+  assert.match(v.missing[0], /fs-ext/)
+})
+
+test('dsh 0.1.5 正式版无 fs-ext：不阻断（上限对外不含未来正式版）', () => {
+  const dir = makeSourceDir((d) => {
+    writeFileSync(join(d, 'apps', 'cli', 'package.json'), JSON.stringify({ version: '0.1.5' }))
+  })
+  const v = validateSourceDir(dir)
+  assert.equal(v.ok, true)
+  assert.deepEqual(v.missing, [])
+})
+
+test('dsh 0.1.5-alpha.1 有 fs-ext：仍不阻断（上限短路，不读盘）', () => {
+  const dir = makeSourceDir((d) => {
+    writeFileSync(join(d, 'apps', 'cli', 'package.json'), JSON.stringify({ version: '0.1.5-alpha.1' }))
+    mkdirSync(join(d, 'node_modules', '.pnpm', 'fs-ext@2.1.1'), { recursive: true })
+  })
+  const v = validateSourceDir(dir)
+  assert.equal(v.ok, true)
+  assert.deepEqual(v.missing, [])
+})
+
+test('仅有 fs-extra 而无 fs-ext：0.1.3 照样阻断（前缀末尾 @ 不可少）', () => {
+  const dir = makeSourceDir((d) => {
+    writeFileSync(join(d, 'apps', 'cli', 'package.json'), JSON.stringify({ version: '0.1.3-alpha.1' }))
+    mkdirSync(join(d, 'node_modules', '.pnpm', 'fs-extra@11.0.0'), { recursive: true })
+  })
+  const v = validateSourceDir(dir)
+  assert.equal(v.ok, false)
+  assert.match(v.missing[0], /fs-ext/)
+})
+
+test('非法版本号：阻断并指向检查文件（fail-closed，不再静默放行）', () => {
+  const dir = makeSourceDir((d) => {
+    writeFileSync(join(d, 'apps', 'cli', 'package.json'), JSON.stringify({ version: 'foo' }))
+  })
+  const v = validateSourceDir(dir)
+  assert.equal(v.ok, false)
+  assert.equal(v.missing.length, 1)
+  assert.match(v.missing[0], /非法/)
+})
+
+test('非字符串版本号：视为不可读（与缺文件同形，不触发 fs-ext 项）', () => {
+  const dir = makeSourceDir((d) => {
+    writeFileSync(join(d, 'apps', 'cli', 'package.json'), JSON.stringify({ version: 123 }))
+  })
+  const v = validateSourceDir(dir)
+  assert.equal(v.ok, false)
+  assert.equal(v.version, '')
+  assert.equal(v.missing.length, 1)
+  assert.match(v.missing[0], /不是 dsh 源码仓库/)
 })
 
 test('官方 remote：无 remote 警告；非官方 remote：有警告', () => {

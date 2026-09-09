@@ -3,15 +3,17 @@
  *
  * 源码启动是通用能力，不绑定任何特定版本：spawn 形态
  * `node --import tsx/esm apps/cli/src/bin.ts web …`（cwd=仓库根）已验证
- * 对 dsh-v0.1.0-rc.8 ～ dsh-v0.1.5-alpha.1 逐字一致（根 package.json 的
- * "dsh" script、tsx devDep、入口路径各 tag 相同；0.1.5 仅重构 web-app 内
- * SSH 判断与 client 可选 webServer 承载，不影响 spawn 形态；0.1.3.x 新增的
- * fs-ext 硬依赖由下方版本门控单独校验，0.1.5 起改用 prebuilt
- * node-addon-system，不再需要它）；本项目支持版本为
- * dsh ≥0.1.2-rc.1，详见 README 支持版本说明。
+ * 对 dsh-v0.1.0-rc.8 ～ dsh-v0.1.5-alpha.1 一致（根 package.json 的
+ * "dsh" script、tsx devDep、入口路径各 tag 相同，核实：
+ * `git diff dsh-v0.1.3-alpha.2..dsh-v0.1.5-alpha.1 -- package.json apps/cli/src/bin.ts`；
+ * 0.1.5 的 web-app 内 SSH 判断与 client 可选 webServer 承载重构不影响
+ * spawn 形态；0.1.3.x 新增的 fs-ext 硬依赖由下方版本门控单独校验，
+ * 0.1.5-alpha.1 起改用 prebuilt node-addon-system，不再需要它）；
+ * 本项目支持版本为 dsh ≥0.1.2-rc.1，详见 README 支持版本说明。
  *
  * 启动硬前提（阻断项，缺一不可）：
- * 1. apps/cli/package.json 可读（取版本号）
+ * 1. apps/cli/package.json 可读且 version 为合法 semver（取版本号；非法串
+ *    说明文件被手改或损坏，直接阻断，见 validateSourceDir）
  * 2. node_modules/tsx 存在（--import tsx/esm 从 cwd 解析，需先 pnpm install）
  * 3. apps/web/dist/index.html 存在（旧版缺 dist 启动即 throw、alpha.1+ 缺 dist
  *    白屏——统一前置拦截，要求先跑过一次 `pnpm build`）
@@ -25,6 +27,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { compareVersions, type LocatedDsh } from './dsh-locator.js'
+import { SEMVER_RE } from './dsh-update-target.js'
 
 /** 上游官方仓库地址的判别片段（origin 或 upstream 指向它才支持在线更新）。 */
 const OFFICIAL_REPO_FRAGMENT = 'deepseek-ai/deepseek-harness'
@@ -140,18 +143,26 @@ export function validateSourceDir(
   const missing: string[] = []
   const version = readSourceVersion(dir)
   if (version === '') missing.push('不是 dsh 源码仓库（缺 apps/cli/package.json 或版本号不可读）')
+  else if (!SEMVER_RE.test(version)) missing.push('版本号非法（apps/cli/package.json 的 version 不是合法 semver，文件可能被手改或损坏，请检查后重新执行 pnpm install）')
   if (!existsSync(join(dir, 'node_modules', 'tsx'))) missing.push('依赖未安装（缺 node_modules/tsx，请在源码目录执行 pnpm install）')
   if (!existsSync(join(dir, 'apps', 'web', 'dist', 'index.html'))) missing.push('前端未构建（缺 apps/web/dist，请在源码目录执行 pnpm build）')
   // 依赖完整性（仅 dsh 0.1.3.x 需要 fs-ext：0.1.3-alpha.1/alpha.2 的会话锁直连
   // fs-ext；0.1.5-alpha.1 起改用 prebuilt node-addon-system，上限避免误报新版目录）。
+  // 区间假设：已知 tag 中 0.1.3.x 与 0.1.5-alpha.1 之间无其他 release line
+  // （尚无 0.1.4）；未来中间版本落入区间会被要求 fs-ext，属 fail-closed——
+  // 若其 lease 已切 prebuilt 会误阻断，届时按其实现复核。门控读
+  // manifest.version（版本代理特性，非特性探测）：中间提交（version 未 bump
+  // 但 lease 已切）可能误判，文档限定 detached-HEAD tag 工作流。
   // fs-ext 仅被 workspace 子包引用、不落根 node_modules，以 pnpm store 为准。
+  // 前缀末尾 `@` 关键：`fs-extra@` 不得误命中（第 7 字符 `r` vs `@`）。
   if (
     version !== ''
+    && SEMVER_RE.test(version)
     && compareVersions(version, '0.1.3-alpha.1') >= 0
     && compareVersions(version, '0.1.5-alpha.1') < 0
     && !pnpmStoreHas(dir, 'fs-ext@')
   ) {
-    missing.push('依赖是旧版本安装的（缺 dsh 0.1.3 新增的 fs-ext），请重新执行 pnpm install（设置页「准备环境」或「下载更新」会自动完成）')
+    missing.push('依赖是旧版本安装的（缺 dsh 0.1.3.x 新增的 fs-ext），请重新执行 pnpm install（设置页「准备环境」或「下载更新」会自动完成）')
   }
 
   const warnings: string[] = []

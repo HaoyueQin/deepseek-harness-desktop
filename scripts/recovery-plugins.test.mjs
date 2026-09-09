@@ -3,10 +3,13 @@
  * 用法：npm run build && node scripts/recovery-plugins.test.mjs
  */
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { isReservedProfile, listPlugins, parseOutdatedJson } from '../dist/recovery/plugins.js'
+import {
+  disablePlugin, enablePlugin, isReservedProfile, isValidPluginName,
+  listPlugins, parseOutdatedJson, pluginCliArgs,
+} from '../dist/recovery/plugins.js'
 
 const tmp = mkdtempSync(join(tmpdir(), 'dsh-plugins-test-'))
 const web = join(tmp, 'profiles', 'web')
@@ -59,11 +62,59 @@ assert.deepEqual(parseOutdatedJson('not json'), {})
 assert.deepEqual(parseOutdatedJson('[]'), {})
 assert.deepEqual(parseOutdatedJson(JSON.stringify({ x: { latest: '1.0.0', dependencyType: 'dependencies' } })), { x: '1.0.0' })
 
-// --- 官方桌面独占 profile 隔离（0.1.5-alpha.1 起上游 rejectElectronProfile）：大小写不敏感，清单直接空表 ---
+// --- 官方桌面独占 profile 隔离（0.1.5-alpha.1 起上游 rejectElectronProfile）：大小写不敏感 ---
+// desktop 同形 fixture：含 dependencies + node_modules 可禁用行。没有它，空目录
+// 本来就返回 []，断言无法区分守卫与空目录（删守卫仍绿）；seed 后唯有守卫能致空。
+const desktop = join(tmp, 'profiles', 'desktop')
+const dnm = join(desktop, 'node_modules')
+mkdirSync(join(dnm, 'demo-plugin'), { recursive: true })
+writeFileSync(join(desktop, 'package.json'), JSON.stringify({
+  dependencies: { 'demo-plugin': '^1.0.0' },
+  dsh: { profile: { bundles: ['demo-plugin'] } },
+}), 'utf8')
+writeFileSync(join(dnm, 'demo-plugin', 'package.json'), JSON.stringify({
+  version: '1.2.3', dsh: { bundle: { patch: './bundle.yml' } },
+}), 'utf8')
+writeFileSync(join(dnm, 'demo-plugin', 'bundle.yml'), '- insert:\n    - id: demo-main\n      name: demo-plugin\n', 'utf8')
+
 assert.equal(isReservedProfile('desktop'), true)
 assert.equal(isReservedProfile('Desktop'), true)
+assert.equal(isReservedProfile('DESKTOP'), true)
 assert.equal(isReservedProfile('web'), false)
-assert.deepEqual(listPlugins(join(tmp, 'profiles', 'desktop')), [])
+assert.equal(isReservedProfile(''), false)
+assert.equal(isReservedProfile('desktop.txt'), false)
+assert.equal(isReservedProfile('mydesktop'), false)
+assert.equal(isReservedProfile(' desktop'), false) // 不 trim，与上游精确相等保持 parity
+assert.equal(isReservedProfile(undefined), false)
+assert.equal(isReservedProfile(null), false)
+// seeded desktop 仍空表：唯守卫可致（删 plugins.ts:60 早退则此处为 1 项）。
+assert.deepEqual(listPlugins(desktop), [])
+// 尾斜杠经 basename 归一，同样隔离（注：Windows 文件系统大小写不敏感，
+// 不另建 'Desktop' 目录，用同目录尾斜杠覆盖路径层）。
+assert.deepEqual(listPlugins(desktop + '/'), [])
+// 开关拒绝：ok:false + patch 未被创建（删 applyToggle 首行则此处 ok:true）。
+{
+  const r1 = await disablePlugin(desktop, 'demo-plugin')
+  assert.equal(r1.ok, false)
+  assert.deepEqual(r1.applied, [])
+  assert.equal(r1.disabledCount, 0)
+  assert.match(r1.reason ?? '', /独占/)
+  const r2 = await enablePlugin(desktop, 'demo-plugin')
+  assert.equal(r2.ok, false)
+  assert.deepEqual(r2.applied, [])
+  assert.match(r2.reason ?? '', /独占/)
+  assert.equal(existsSync(join(desktop, 'cordis.patch.yml')), false)
+}
+
+// --- pluginCliArgs 写死 web：永不构造 desktop（改 'web' 为 'desktop' 即红）---
+assert.deepEqual(pluginCliArgs('remove', 'x'), ['plugin', '--profile', 'web', 'remove', 'x'])
+assert.deepEqual(pluginCliArgs('update', '@scope/name'), ['plugin', '--profile', 'web', 'update', '@scope/name'])
+
+// --- isValidPluginName 白名单：旗标/穿越/分隔符注入全挡 ---
+for (const good of ['demo-plugin', '@scope/name', 'a', 'x.y_z-w']) assert.equal(isValidPluginName(good), true)
+for (const bad of ['', '--profile', '-rf', '../evil', 'a;b', 'a/b', '@/x', 'a:b', 'a\\b', '--upload-pack=x']) {
+  assert.equal(isValidPluginName(bad), false)
+}
 
 rmSync(tmp, { recursive: true, force: true })
 console.log('recovery-plugins OK')

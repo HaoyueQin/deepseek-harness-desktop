@@ -51,12 +51,18 @@ export function locateDsh(): LocatedDsh | null {
 /**
  * 比较 semver 版本（含 prerelease，如 "0.1.1-rc.1"）。
  * @returns a>b 为 1，a<b 为 -1，相等为 0。
- * 规则：逐段数字比较；无 prerelease 高于有 prerelease；prerelease 按 "."
- * 分段比较，纯数字段按数值、否则按字典序。
+ * 规则：忽略构建元数据（`+build` 不参与比较，与 semver 一致）；首个 `-`
+ * 之后全为 prerelease（多段横线不断尾）；逐段数字比较；无 prerelease 高于
+ * 有 prerelease；prerelease 按 "." 分段比较，纯数字段按数值、否则按字典序。
  */
 export function compareVersions(a: string, b: string): number {
   const parse = (v: string): { nums: number[]; pre: string[] | null } => {
-    const [core, pre] = v.split('-', 2)
+    // semver 构建元数据（`+` 之后）不参与 precedence，比较前剥离。
+    const noBuild = v.split('+', 1)[0]
+    // prerelease 是首个 `-` 之后的全串（`split('-', 2)` 会丢第二段 `-` 之后）。
+    const dash = noBuild.indexOf('-')
+    const core = dash === -1 ? noBuild : noBuild.slice(0, dash)
+    const pre = dash === -1 ? undefined : noBuild.slice(dash + 1)
     return {
       nums: core.split('.').map((n) => Number.parseInt(n, 10) || 0),
       pre: pre === undefined ? null : pre.split('.'),
