@@ -5,7 +5,7 @@
  */
 
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import {
   bundlePatchInsertedIds, disableRow, enableRow, isProtectedModule, readUserPatchState,
 } from './patch.js'
@@ -17,6 +17,18 @@ const INBOX_BUNDLES = new Set([
 
 /** 壳注入的桌面集成插件（profiles/node_modules 扁平目录，系统组件不可操作）。 */
 export const DESKTOP_SYSTEM_COMPONENT = 'dsh-desktop-integration'
+
+/**
+ * 官方 Electron 独占的 profile（上游 `rejectElectronProfile`：CLI 拒绝
+ * `--profile desktop`，0.1.5-alpha.1 起）。壳写死只用 `web`，此名单是纵深
+ * 防御：profileDir 的 basename 若落入此名单，清单/开关一律拒绝，绝不触碰。
+ */
+export const RESERVED_PROFILES = ['desktop'] as const
+
+/** 是否为官方独占 profile（大小写不敏感）。 */
+export function isReservedProfile(name: string): boolean {
+  return (RESERVED_PROFILES as readonly string[]).includes(name.toLowerCase())
+}
 
 export interface PluginInfo {
   name: string
@@ -44,6 +56,8 @@ function readJson<T>(path: string): T | null {
 }
 
 export function listPlugins(profileDir: string): PluginInfo[] {
+  // 纵深防御：绝不触碰官方桌面独占 profile（正常路径 profileDir 恒为 web）。
+  if (isReservedProfile(basename(profileDir))) return []
   const manifest = readJson<{
     dependencies?: Record<string, string>
     dsh?: { profile?: { bundles?: unknown } }
@@ -79,6 +93,9 @@ export interface ToggleResult {
 
 function applyToggle(profileDir: string, name: string, disable: boolean): Promise<ToggleResult> {
   return (async () => {
+    if (isReservedProfile(basename(profileDir))) {
+      return { ok: false, applied: [], disabledCount: 0, reason: '官方桌面独占 profile，壳不触碰' }
+    }
     if (isProtectedModule(name)) {
       return { ok: false, applied: [], disabledCount: 0, reason: '宿主核心模块不允许禁用' }
     }
@@ -105,7 +122,11 @@ export function enablePlugin(profileDir: string, name: string): Promise<ToggleRe
   return applyToggle(profileDir, name, false)
 }
 
-/** `dsh plugin --profile web ...` 的 argv（spawn 时拼在 binJs/nodeArgs 后）。 */
+/**
+ * `dsh plugin --profile web ...` 的 argv（spawn 时拼在 binJs/nodeArgs 后）。
+ * profile 写死为 `web`：绝不触碰官方 Electron 独占的 `desktop` profile
+ *（上游 `rejectElectronProfile` 会直接拒绝，0.1.5-alpha.1 起）。
+ */
 export function pluginCliArgs(action: 'remove' | 'update', name: string): string[] {
   return ['plugin', '--profile', 'web', action, name]
 }

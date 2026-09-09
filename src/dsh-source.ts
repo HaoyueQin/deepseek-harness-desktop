@@ -3,10 +3,11 @@
  *
  * 源码启动是通用能力，不绑定任何特定版本：spawn 形态
  * `node --import tsx/esm apps/cli/src/bin.ts web …`（cwd=仓库根）已验证
- * 对 dsh-v0.1.0-rc.8 ～ dsh-v0.1.3-alpha.2 逐字一致（根 package.json 的
- * "dsh" script、tsx devDep、入口路径各 tag 相同；alpha.1→alpha.2 仅把 bin.ts
- * 顶层 switch 包进 runCli()，以 main 脚本运行时行为不变；0.1.3 起新增的 fs-ext
- * 硬依赖由下方版本门控单独校验）；本项目支持版本为
+ * 对 dsh-v0.1.0-rc.8 ～ dsh-v0.1.5-alpha.1 逐字一致（根 package.json 的
+ * "dsh" script、tsx devDep、入口路径各 tag 相同；0.1.5 仅重构 web-app 内
+ * SSH 判断与 client 可选 webServer 承载，不影响 spawn 形态；0.1.3.x 新增的
+ * fs-ext 硬依赖由下方版本门控单独校验，0.1.5 起改用 prebuilt
+ * node-addon-system，不再需要它）；本项目支持版本为
  * dsh ≥0.1.2-rc.1，详见 README 支持版本说明。
  *
  * 启动硬前提（阻断项，缺一不可）：
@@ -14,9 +15,10 @@
  * 2. node_modules/tsx 存在（--import tsx/esm 从 cwd 解析，需先 pnpm install）
  * 3. apps/web/dist/index.html 存在（旧版缺 dist 启动即 throw、alpha.1+ 缺 dist
  *    白屏——统一前置拦截，要求先跑过一次 `pnpm build`）
- * 4. dsh ≥0.1.3 时 pnpm store 里有新增硬依赖 fs-ext（需 C++ 编译工具链，
+ * 4. dsh 0.1.3.x 时 pnpm store 里有该版本新增硬依赖 fs-ext（需 C++ 编译工具链，
  *    无 prebuilt）——tsx 在而 fs-ext 不在说明依赖是旧版安装的（如手动
- *    git pull 后未重新 install），启动必然崩 ERR_MODULE_NOT_FOUND
+ *    git pull 后未重新 install），启动必然崩 ERR_MODULE_NOT_FOUND；
+ *    0.1.5-alpha.1 起会话锁改用 prebuilt node-addon-system，此条不适用
  */
 
 import { spawnSync } from 'node:child_process'
@@ -140,11 +142,13 @@ export function validateSourceDir(
   if (version === '') missing.push('不是 dsh 源码仓库（缺 apps/cli/package.json 或版本号不可读）')
   if (!existsSync(join(dir, 'node_modules', 'tsx'))) missing.push('依赖未安装（缺 node_modules/tsx，请在源码目录执行 pnpm install）')
   if (!existsSync(join(dir, 'apps', 'web', 'dist', 'index.html'))) missing.push('前端未构建（缺 apps/web/dist，请在源码目录执行 pnpm build）')
-  // 依赖完整性（dsh ≥0.1.3 才需要 fs-ext；以版本门控避免误报旧版目录）。
+  // 依赖完整性（仅 dsh 0.1.3.x 需要 fs-ext：0.1.3-alpha.1/alpha.2 的会话锁直连
+  // fs-ext；0.1.5-alpha.1 起改用 prebuilt node-addon-system，上限避免误报新版目录）。
   // fs-ext 仅被 workspace 子包引用、不落根 node_modules，以 pnpm store 为准。
   if (
     version !== ''
     && compareVersions(version, '0.1.3-alpha.1') >= 0
+    && compareVersions(version, '0.1.5-alpha.1') < 0
     && !pnpmStoreHas(dir, 'fs-ext@')
   ) {
     missing.push('依赖是旧版本安装的（缺 dsh 0.1.3 新增的 fs-ext），请重新执行 pnpm install（设置页「准备环境」或「下载更新」会自动完成）')

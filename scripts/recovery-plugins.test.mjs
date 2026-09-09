@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { listPlugins, parseOutdatedJson } from '../dist/recovery/plugins.js'
+import { isReservedProfile, listPlugins, parseOutdatedJson } from '../dist/recovery/plugins.js'
 
 const tmp = mkdtempSync(join(tmpdir(), 'dsh-plugins-test-'))
 const web = join(tmp, 'profiles', 'web')
@@ -58,6 +58,12 @@ assert.deepEqual(parseOutdatedJson(''), {})
 assert.deepEqual(parseOutdatedJson('not json'), {})
 assert.deepEqual(parseOutdatedJson('[]'), {})
 assert.deepEqual(parseOutdatedJson(JSON.stringify({ x: { latest: '1.0.0', dependencyType: 'dependencies' } })), { x: '1.0.0' })
+
+// --- 官方桌面独占 profile 隔离（0.1.5-alpha.1 起上游 rejectElectronProfile）：大小写不敏感，清单直接空表 ---
+assert.equal(isReservedProfile('desktop'), true)
+assert.equal(isReservedProfile('Desktop'), true)
+assert.equal(isReservedProfile('web'), false)
+assert.deepEqual(listPlugins(join(tmp, 'profiles', 'desktop')), [])
 
 rmSync(tmp, { recursive: true, force: true })
 console.log('recovery-plugins OK')

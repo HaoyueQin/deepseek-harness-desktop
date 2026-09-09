@@ -85,7 +85,7 @@ Settings → Desktop from a supported shell) **or** download the matching older 
 ### Prerequisites
 
 - **npm channel (default)**: Node.js ≥ 22 and the `dsh` CLI (`npm i -g @deepseek-ai/dsh`) — if missing, the app shows a setup page with a copyable command or a one-click in-app install
-- **Source channel (optional)**: additionally requires `git` and `pnpm` on PATH; the shell clones the repo and runs `pnpm install` + `pnpm build` for you — dsh ≥ 0.1.3 sources also need a C++ build toolchain (on Windows: Visual Studio Build Tools with the "Desktop development with C++" workload) to compile the `fs-ext` dependency
+- **Source channel (optional)**: additionally requires `git` and `pnpm` on PATH; the shell clones the repo and runs `pnpm install` + `pnpm build` for you — dsh 0.1.3.x sources also need a C++ build toolchain (on Windows: Visual Studio Build Tools with the "Desktop development with C++" workload) to compile the `fs-ext` dependency; dsh ≥ 0.1.5-alpha.1 uses prebuilt `node-addon-system` and no longer needs it
 
 ### Download
 
@@ -141,7 +141,7 @@ The CI workflow (`.github/workflows/release.yml`) builds all three platforms on 
 
 - **Data** (`DSH_HOME`): defaults to `~/.dsh` (honors the `$DSH_HOME` environment variable) — profiles, sessions, storage; shared by both backend sources
 - **Logs**: `<userData>/logs/main.log`
-- **dsh**: the shell runs the backend from your chosen source — npm global (located via PATH + `npm root -g`, upgradable from Settings → Desktop) or a local checkout (validated before launch: manifest, `node_modules/tsx`, built web dist, and — for dsh ≥ 0.1.3 — the `fs-ext` dependency)
+- **dsh**: the shell runs the backend from your chosen source — npm global (located via PATH + `npm root -g`, upgradable from Settings → Desktop) or a local checkout (validated before launch: manifest, `node_modules/tsx`, built web dist, and — for dsh 0.1.3.x — the `fs-ext` dependency)
 
 ## Project layout
 
@@ -152,7 +152,7 @@ src/
   dsh-locator.ts        locate the npm-global dsh CLI (PATH check + npm root -g) + semver compare
   dsh-versions.ts       backend version listing (npm versions × dist-tags → sorted, channel-tagged)
   dsh-update-target.ts  npm dist-tags → update target (semver whitelist, prerelease-aware)
-  dsh-source.ts         git-checkout source: validation (manifest/tsx/web dist, fs-ext gate for dsh ≥ 0.1.3), tag parsing, entry args
+  dsh-source.ts         git-checkout source: validation (manifest/tsx/web dist, fs-ext gate for dsh 0.1.3.x), tag parsing, entry args
   dsh-source-updater.ts source-channel updates: fetch tags → clean tree → checkout → pnpm install/build → restart
   dsh-updater.ts        npm-channel backend: check latest / install any version (upgrade or rollback)
   dsh/spawn.ts          spawn dsh web --port <policy port> --patch; parse stdout URL line; output ring buffer; graceful stop

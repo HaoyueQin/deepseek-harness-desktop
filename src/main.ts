@@ -722,7 +722,7 @@ async function bootWithLocatedDsh(): Promise<'ok' | 'not-found' | 'failed'> {
       // 失败时 dsh 可能已监听端口（仅 HTTP 探测失败），先停掉，
       // 防止 dsh 变孤儿进程常驻后台、占用 DSH_HOME 文件锁。
       // stop() 对已退出进程安全（spawn.ts 内 exitCode 检查直接返回）。
-      // 真实死因（如 dsh 0.1.3 起依赖缺失 fs-ext 的 ERR_MODULE_NOT_FOUND）
+      // 真实死因（如 dsh 0.1.3.x 依赖缺失 fs-ext 的 ERR_MODULE_NOT_FOUND）
       // 只出现在 stdout/stderr 里、不在 err 信息里——快照取自环形缓冲
       // （stop 不影响其内容），正是恢复页快照区的价值。
       if (dsh !== null) await dsh.stop()

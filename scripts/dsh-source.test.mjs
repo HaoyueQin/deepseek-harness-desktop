@@ -62,7 +62,7 @@ test('缺 tsx：missing 指向 pnpm install', () => {
   assert.match(v.missing[0], /pnpm install/)
 })
 
-test('dsh ≥0.1.3 缺 fs-ext：missing 指向重新 pnpm install', () => {
+test('dsh 0.1.3.x 缺 fs-ext：missing 指向重新 pnpm install', () => {
   // 旧安装形态：tsx/dist 都在，但 pnpm store 里没有 0.1.3 新增的 fs-ext
   const dir = makeSourceDir((d) => {
     writeFileSync(join(d, 'apps', 'cli', 'package.json'), JSON.stringify({ version: '0.1.3-alpha.1' }))
@@ -74,10 +74,29 @@ test('dsh ≥0.1.3 缺 fs-ext：missing 指向重新 pnpm install', () => {
   assert.match(v.missing[0], /pnpm install/)
 })
 
-test('dsh ≥0.1.3 pnpm store 有 fs-ext：不报缺失', () => {
+test('dsh 0.1.3-alpha.2 缺 fs-ext：同样阻断（两 0.1.3 版本都要 fs-ext）', () => {
+  const dir = makeSourceDir((d) => {
+    writeFileSync(join(d, 'apps', 'cli', 'package.json'), JSON.stringify({ version: '0.1.3-alpha.2' }))
+  })
+  const v = validateSourceDir(dir)
+  assert.equal(v.ok, false)
+  assert.match(v.missing[0], /fs-ext/)
+})
+
+test('dsh 0.1.3.x pnpm store 有 fs-ext：不报缺失', () => {
   const dir = makeSourceDir((d) => {
     writeFileSync(join(d, 'apps', 'cli', 'package.json'), JSON.stringify({ version: '0.1.3-alpha.1' }))
     mkdirSync(join(d, 'node_modules', '.pnpm', 'fs-ext@2.1.1'), { recursive: true })
+  })
+  const v = validateSourceDir(dir)
+  assert.equal(v.ok, true)
+  assert.deepEqual(v.missing, [])
+})
+
+test('dsh 0.1.5-alpha.1 无 fs-ext：不阻断（改用 prebuilt node-addon-system）', () => {
+  // 回归：0.1.5 正常安装也没有 fs-ext，门控上限缺失会误判可启动目录
+  const dir = makeSourceDir((d) => {
+    writeFileSync(join(d, 'apps', 'cli', 'package.json'), JSON.stringify({ version: '0.1.5-alpha.1' }))
   })
   const v = validateSourceDir(dir)
   assert.equal(v.ok, true)
