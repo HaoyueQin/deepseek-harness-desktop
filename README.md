@@ -80,6 +80,18 @@ This shell no longer adapts to dsh versions before 0.1.5-rc.1. Check your backen
 — 0.1.5-rc.1 is the `latest` npm channel — or press "Check for updates" in
 Settings → Desktop from a supported shell) **or** download the matching older shell release.
 
+## Relationship with the official Desktop app
+
+Since dsh 0.1.5, upstream ships its own official Electron app alongside the CLI. This project is an independent, lightweight alternative that wraps the `dsh web` UI you already have — the two differ in three places:
+
+| | This shell | Official Desktop app |
+| --- | --- | --- |
+| Profile | always `web`; never touches the official exclusive `desktop` profile (the CLI rejects `--profile desktop`, and the Recovery Center refuses to list or modify it) | exclusively owns `$DSH_HOME/profiles/desktop` |
+| Transport | listens on localhost (fixed `3080` by default, configurable, random fallback) — terminal and desktop share one backend | opens no port (`dsh-app://` + private pipes) |
+| Versions | tracks a dsh version **range** (≥ 0.1.5-rc.1): npm `latest` or any source tag, switched from Settings / Recovery Center | pins one exact Electron+dsh combination per release |
+
+Coexistence: both can live under one `DSH_HOME` (sessions, settings and credentials are shared product data), but never drive the same profile at the same time — and this shell will always refuse to touch `profiles/desktop`.
+
 ## Install
 
 ### Prerequisites
