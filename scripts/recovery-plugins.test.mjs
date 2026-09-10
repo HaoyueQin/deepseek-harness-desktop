@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
   disablePlugin, enablePlugin, isReservedProfile, isValidPluginName,
-  listPlugins, parseOutdatedJson, pluginCliArgs,
+  listPlugins, parseOutdatedJson, pluginCliArgs, readPatchReload,
 } from '../dist/recovery/plugins.js'
 
 const tmp = mkdtempSync(join(tmpdir(), 'dsh-plugins-test-'))
@@ -104,6 +104,27 @@ assert.deepEqual(listPlugins(desktop + '/'), [])
   assert.deepEqual(r2.applied, [])
   assert.match(r2.reason ?? '', /独占/)
   assert.equal(existsSync(join(desktop, 'cordis.patch.yml')), false)
+}
+
+// --- readPatchReload：补丁层重载策略（live = 写入即热生效 / startup = 仅启动时）---
+// web fixture 的 dsh.profile 无 patchReload 字段 → 与上游默认一致取 live
+assert.equal(readPatchReload(web), 'live')
+// 未初始化的 profile 目录（无 manifest）同样按上游默认 live
+assert.equal(readPatchReload(join(tmp, 'profiles', 'missing')), 'live')
+{
+  const mk = (name, manifest) => {
+    const dir = join(tmp, 'profiles', name)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'package.json'), manifest, 'utf8')
+    return dir
+  }
+  assert.equal(readPatchReload(mk('startup-prof', JSON.stringify({ dsh: { profile: { bundles: [], patchReload: 'startup' } } }))), 'startup')
+  assert.equal(readPatchReload(mk('live-prof', JSON.stringify({ dsh: { profile: { bundles: [], patchReload: 'live' } } }))), 'live')
+  // 非法值：上游 fail-loud 拒绝启动，壳保守按 startup（不承诺热生效）
+  assert.equal(readPatchReload(mk('bogus-prof', JSON.stringify({ dsh: { profile: { patchReload: 'sometimes' } } }))), 'startup')
+  // manifest 损坏 → 读不到字段，回落到默认 live（与 dsh 的 readJson 失败语义无关：
+  // 此时 dsh 也起不来，live 只影响提示文案，不影响写入行为）
+  assert.equal(readPatchReload(mk('corrupt-prof', '{ not json')), 'live')
 }
 
 // --- pluginCliArgs 写死 web：永不构造 desktop（改 'web' 为 'desktop' 即红）---

@@ -89,6 +89,22 @@ export function listPlugins(profileDir: string): PluginInfo[] {
   })
 }
 
+/** 用户补丁层的重载策略（profile manifest 的 `dsh.profile.patchReload`）。 */
+export type PatchReload = 'live' | 'startup'
+
+/**
+ * profile 的补丁重载策略：'live' = dsh 监视补丁文件，写入后热重组生效（无需
+ * 重启）；'startup' = 只在启动时应用。缺省按上游语义取 'live'
+ * （dsh 的 DEFAULT_PROFILE_PATCH_RELOAD，既有 profile 省略该字段时同样按 live）；
+ * 非法值按 'startup' 保守处理——上游对非法值 fail-loud 拒绝启动，此时壳不承诺热生效。
+ */
+export function readPatchReload(profileDir: string): PatchReload {
+  const manifest = readJson<{ dsh?: { profile?: { patchReload?: unknown } } }>(join(profileDir, 'package.json'))
+  const raw = manifest?.dsh?.profile?.patchReload
+  if (raw === undefined) return 'live'
+  return raw === 'live' ? 'live' : 'startup'
+}
+
 export interface ToggleResult {
   ok: boolean
   applied: string[]

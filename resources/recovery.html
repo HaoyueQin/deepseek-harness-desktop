@@ -138,6 +138,7 @@
       <button class="act ghost" id="btnRefreshPlugins" style="padding: 3px 12px; font-size: 12px">刷新</button>
     </div>
     <div id="plugin-list" class="version-list"><span class="hint">正在加载插件清单…</span></div>
+    <p id="plugin-note" class="hint" style="display: none"></p>
   </div>
 
   <div class="card">
@@ -469,16 +470,27 @@
   }
   $('btnRefreshPlugins').onclick = () => { void loadPlugins() }
 
+  function pluginNote(text) {
+    const el = $('plugin-note')
+    el.textContent = text
+    el.style.display = text ? 'block' : 'none'
+  }
+
   async function togglePlugin(p, btn, enable) {
     if (pluginBusy) return
     const label = enable ? '启用' : '禁用'
-    // 禁用/启用可逆、无破坏性：不弹确认，直接执行；列表刷新后的状态变化即反馈
+    // 禁用/启用可逆、无破坏性：不弹确认，直接执行；列表状态变化 + 下方生效时机提示
     pluginBusy = true
     btn.disabled = true
     btn.textContent = label + '中…'
     try {
       const r = enable ? await bridge.plugins.enable(p.name) : await bridge.plugins.disable(p.name)
       if (r.ok !== true) { alert(label + '失败：' + (r.reason ?? '未知原因')); return }
+      // live = 后端在运行 + profile 为 live 重载（dsh 默认）：写补丁即热生效，
+      // 无需重启；否则如实说"重启后生效"（后端已停 / startup profile / 非法值）。
+      pluginNote(label + '「' + p.name + '」：' + (r.live === true
+        ? '补丁层已写入，dsh 已热重载生效（无需重启）'
+        : '补丁层已写入，重启 dsh 后生效'))
       await loadPlugins()
     } catch (e) {
       // 写入被拒（如 Windows 下 renameSync 遇 EPERM/EBUSY）时 IPC reject：必须提示，

@@ -35,7 +35,7 @@ import { listNpmVersions } from './dsh-versions.js'
 import { locateSourceDsh, validateSourceDir, OFFICIAL_REPO_URL } from './dsh-source.js'
 import { enterRecovery, getRecoveryContext, clearRecoveryContext } from './recovery/state.js'
 import { parseFailure, sanitizeLog } from './recovery/parse-failure.js'
-import { disablePlugin, enablePlugin, isImmutablePlugin, isValidPluginName, listPlugins, parseOutdatedJson, pluginCliArgs } from './recovery/plugins.js'
+import { disablePlugin, enablePlugin, isImmutablePlugin, isValidPluginName, listPlugins, parseOutdatedJson, pluginCliArgs, readPatchReload } from './recovery/plugins.js'
 import { parseThemePreference } from './recovery/theme.js'
 import { ipcSenderKind } from './recovery/ipc-guard.js'
 // electron-updater 的 update-downloaded 事件带 downloadedFile（本地完整路径），
@@ -51,6 +51,12 @@ import { INJECT_TITLEBAR } from './titlebar.js'
 
 let win: BrowserWindow | null = null
 let dsh: DshControl | null = null
+/**
+ * dsh 进程是否仍在运行（exited 未结算）。注意不能用 `dsh !== null` 判断"后端
+ * 在运行"：崩溃与启动失败后 dsh 变量仍保留实例（recentOutput 快照要用），
+ * 恢复页的"补丁已热生效"判定必须用本标志，否则崩溃态会误报热生效。
+ */
+let dshAlive = false
 let quitting = false
 
 // dev 隔离（未打包时生效）：userData 与 DSH_HOME 各自独立——单实例锁与打包版
@@ -281,16 +287,26 @@ function registerAppIpc(): void {
   // 插件救火区：清单/禁用/启用（纯文件，dsh 崩溃态可用）
   ipcMain.handle('plugins:list', (event) =>
     fromRecoveryPage(event) ? listPlugins(join(dshHomeDir(), 'profiles', 'web')) : { ok: false, error: 'forbidden' })
-  ipcMain.handle('plugins:disable', async (event, name: unknown) => {
-    if (!fromRecoveryPage(event)) return { ok: false, applied: [], disabledCount: 0, reason: 'forbidden' }
-    if (typeof name !== 'string' || !isValidPluginName(name)) return { ok: false, applied: [], disabledCount: 0, reason: 'invalid' }
-    return disablePlugin(join(dshHomeDir(), 'profiles', 'web'), name)
-  })
-  ipcMain.handle('plugins:enable', async (event, name: unknown) => {
-    if (!fromRecoveryPage(event)) return { ok: false, applied: [], disabledCount: 0, reason: 'forbidden' }
-    if (typeof name !== 'string' || !isValidPluginName(name)) return { ok: false, applied: [], disabledCount: 0, reason: 'invalid' }
-    return enablePlugin(join(dshHomeDir(), 'profiles', 'web'), name)
-  })
+  // 禁用/启用只写 profile 补丁层，不重启后端：dsh 的 live profile 监视
+  // `cordis.patch.yml`，写入即热重组生效（实测壳的 tmp+rename 原子写同样触发；
+  // dsh 0.1.5-rc.1 起该链路与失败回退都已强化：无效补丁被拒绝且保留上一个可用
+  // 应用）。返回 live 如实区分两种生效时机——后端在运行且 profile 为 live 重载
+  // 才是热生效，否则页面提示"重启后生效"，不谎报。
+  const togglePlugin = async (
+    guard: boolean,
+    name: unknown,
+    fn: (dir: string, name: string) => Promise<Awaited<ReturnType<typeof disablePlugin>>>,
+  ) => {
+    if (!guard) return { ok: false, applied: [], disabledCount: 0, reason: 'forbidden', live: false }
+    if (typeof name !== 'string' || !isValidPluginName(name)) return { ok: false, applied: [], disabledCount: 0, reason: 'invalid', live: false }
+    const dir = join(dshHomeDir(), 'profiles', 'web')
+    const r = await fn(dir, name)
+    return { ...r, live: r.ok && dshAlive && readPatchReload(dir) === 'live' }
+  }
+  ipcMain.handle('plugins:disable', (event, name: unknown) =>
+    togglePlugin(fromRecoveryPage(event), name, disablePlugin))
+  ipcMain.handle('plugins:enable', (event, name: unknown) =>
+    togglePlugin(fromRecoveryPage(event), name, enablePlugin))
   // 卸载/更新：dsh plugin CLI 编排——停后端防文件锁 → spawn → 重启
   const runPluginCli = async (action: 'remove' | 'update', name: string): Promise<{ ok: boolean; busy?: boolean; error?: string }> => {
     if (pluginsBusy || sourceBusy || versionBusy || isSourceUpdating()) return { ok: false, busy: true }
@@ -643,7 +659,7 @@ function showWindow(): void {
  * 失败（dsh.url reject，如端口被抢注的 EADDRINUSE）交还调用方重试。
  */
 function spawnDshAttempt(located: LocatedDsh, port: number | undefined): DshControl {
-  dsh = startDsh({
+  const control = startDsh({
     nodePath: 'node',
     dshBin: located.binJs,
     nodeArgs: located.nodeArgs,
@@ -652,17 +668,23 @@ function spawnDshAttempt(located: LocatedDsh, port: number | undefined): DshCont
     onLog: log,
     port,
   })
+  dsh = control
+  dshAlive = true
   let ready = false
-  void dsh.url.then(() => { ready = true }, () => { /* 启动期失败由调用方处理 */ })
-  dsh.exited.then(({ expected, code, signal }) => {
+  void control.url.then(() => { ready = true }, () => { /* 启动期失败由调用方处理 */ })
+  control.exited.then(({ expected, code, signal }) => {
+    // 仅当变量仍指向本实例时清标志：固定端口重试/重启的 stop+spawn 交叠
+    // 不会把刚起来的新实例误标为已退出。
+    if (dsh === control) dshAlive = false
     log(`dsh 进程退出: expected=${expected} code=${String(code)} signal=${String(signal)}`)
-    // 意外退出 → 恢复模式：不弹窗不退出，切壳原生恢复页（handover §7.2）
-    if (!expected && !quitting && ready && dsh !== null) {
-      buildRecoveryContext('crashed', code, signal, dsh.recentOutput())
+    // 意外退出 → 恢复模式：不弹窗不退出，切壳原生恢复页（handover §7.2）。
+    // 崩溃判定用实例身份（dsh === control）而非 dsh !== null —— 后者恒真。
+    if (!expected && !quitting && ready && dsh === control) {
+      buildRecoveryContext('crashed', code, signal, control.recentOutput())
       void showRecoveryPage()
     }
   })
-  return dsh
+  return control
 }
 
 async function startDshAndLoad(located: LocatedDsh): Promise<void> {
