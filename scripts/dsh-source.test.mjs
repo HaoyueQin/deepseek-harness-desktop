@@ -106,7 +106,7 @@ test('dsh 0.1.3.x pnpm store 有 fs-ext：不报缺失', () => {
 })
 
 test('dsh 0.1.5-alpha.1 无 fs-ext：不阻断（改用 prebuilt node-addon-system）', () => {
-  // 回归：0.1.5 正常安装也没有 fs-ext，门控上限缺失会误判可启动目录
+  // 回归：0.1.5 正常安装也没有 fs-ext；门控精确匹配 0.1.3 整行，非该行直接短路
   const dir = makeSourceDir((d) => {
     writeFileSync(join(d, 'apps', 'cli', 'package.json'), JSON.stringify({ version: '0.1.5-alpha.1' }))
   })
@@ -119,7 +119,7 @@ test('dsh 0.1.5-alpha.1 无 fs-ext：不阻断（改用 prebuilt node-addon-syst
 
 test('dsh 0.1.5-rc.1 无 fs-ext：不阻断（支持下限版本，与 alpha.1 同 0.1.5 行）', () => {
   // README 声明的支持下限即 0.1.5-rc.1：会话锁走 prebuilt node-addon-system，
-  // 正常安装没有 fs-ext，门控上限（<0.1.5-alpha.1）已经短路
+  // 正常安装没有 fs-ext；门控只认 0.1.3 整行，0.1.5 行直接短路
   const dir = makeSourceDir((d) => {
     writeFileSync(join(d, 'apps', 'cli', 'package.json'), JSON.stringify({ version: '0.1.5-rc.1' }))
   })
@@ -149,17 +149,16 @@ test('dsh 0.1.3-alpha.2 有 fs-ext：不报缺失（与 alpha.1 对称）', () =
   assert.deepEqual(v.missing, [])
 })
 
-test('dsh 0.1.4 缺 fs-ext：阻断（fail-closed：尚无该 tag，按区间要求，发布后按 lease 复核）', () => {
+test('dsh 0.1.4 缺 fs-ext：不阻断（未知版本线 fail-open：原生依赖不可预知，不做区间假设）', () => {
   const dir = makeSourceDir((d) => {
     writeFileSync(join(d, 'apps', 'cli', 'package.json'), JSON.stringify({ version: '0.1.4-alpha.1' }))
   })
   const v = validateSourceDir(dir)
-  assert.equal(v.ok, false)
-  assert.equal(v.missing.length, 1)
-  assert.match(v.missing[0], /fs-ext/)
+  assert.equal(v.ok, true)
+  assert.deepEqual(v.missing, [])
 })
 
-test('dsh 0.1.5 正式版无 fs-ext：不阻断（上限对外不含未来正式版）', () => {
+test('dsh 0.1.5 正式版无 fs-ext：不阻断（非 0.1.3 行）', () => {
   const dir = makeSourceDir((d) => {
     writeFileSync(join(d, 'apps', 'cli', 'package.json'), JSON.stringify({ version: '0.1.5' }))
   })
@@ -168,7 +167,7 @@ test('dsh 0.1.5 正式版无 fs-ext：不阻断（上限对外不含未来正式
   assert.deepEqual(v.missing, [])
 })
 
-test('dsh 0.1.5-alpha.1 有 fs-ext：仍不阻断（上限短路，不读盘）', () => {
+test('dsh 0.1.5-alpha.1 有 fs-ext：仍不阻断（非 0.1.3 行，不读盘）', () => {
   const dir = makeSourceDir((d) => {
     writeFileSync(join(d, 'apps', 'cli', 'package.json'), JSON.stringify({ version: '0.1.5-alpha.1' }))
     mkdirSync(join(d, 'node_modules', '.pnpm', 'fs-ext@2.1.1'), { recursive: true })

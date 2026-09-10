@@ -10,9 +10,13 @@ import {
   bundlePatchInsertedIds, disableRow, enableRow, isProtectedModule, readUserPatchState,
 } from './patch.js'
 
-/** dsh 官方 in-box bundle（模板自带，恢复页不提供救火）。 */
+/**
+ * dsh 官方 in-box bundle（随船模板包，恢复页不提供卸载/更新救火）。
+ * 与上游 PROFILE_TEMPLATES 对齐（acp/web/headless/sdk/sdk-minimal + 公共底座）。
+ */
 const INBOX_BUNDLES = new Set([
   '@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-headless',
+  '@deepseek-ai/dsh-acp-app', '@deepseek-ai/dsh-sdk-app', '@deepseek-ai/dsh-sdk-minimal',
 ])
 
 /** 壳注入的桌面集成插件（profiles/node_modules 扁平目录，系统组件不可操作）。 */

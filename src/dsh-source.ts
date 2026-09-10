@@ -77,6 +77,18 @@ function pnpmStoreHas(dir: string, prefix: string): boolean {
 }
 
 /**
+ * 该版本是否属于已知需要 fs-ext 的 0.1.3 整行（alpha 含正式版）。
+ * 精确匹配核心三段 `0.1.3`：prerelease/build 元数据不影响判定；
+ * `0.1.30` 等更长核心不受影响（全等比较，非前缀）。
+ */
+function isFsExtLine(version: string): boolean {
+  const noBuild = version.split('+', 1)[0]
+  const dash = noBuild.indexOf('-')
+  const core = dash === -1 ? noBuild : noBuild.slice(0, dash)
+  return core === '0.1.3'
+}
+
+/**
  * 从 git tag 列表（原样 tag 名）取 semver 最新的一个；无合法 tag 返回 null。
  * 纯函数，源码更新器与单测共用。
  */
@@ -149,21 +161,19 @@ export function validateSourceDir(
   else if (!SEMVER_RE.test(version)) missing.push('版本号非法（apps/cli/package.json 的 version 不是合法 semver，文件可能被手改或损坏，请检查后重新执行 pnpm install）')
   if (!existsSync(join(dir, 'node_modules', 'tsx'))) missing.push('依赖未安装（缺 node_modules/tsx，请在源码目录执行 pnpm install）')
   if (!existsSync(join(dir, 'apps', 'web', 'dist', 'index.html'))) missing.push('前端未构建（缺 apps/web/dist，请在源码目录执行 pnpm build）')
-  // 依赖完整性（仅历史 0.1.3.x 需要 fs-ext：0.1.3-alpha.1/alpha.2 的会话锁直连
-  // fs-ext；0.1.5-alpha.1 起改用 prebuilt node-addon-system，上限避免误报新版目录。
-  // 支持下限已是 0.1.5-rc.1，此门控只服务低于下限的旧目录，fail-closed 提示不阻断新版）。
-  // 区间假设：已知 tag 中 0.1.3.x 与 0.1.5-alpha.1 之间无其他 release line
-  // （尚无 0.1.4）；未来中间版本落入区间会被要求 fs-ext，属 fail-closed——
-  // 若其 lease 已切 prebuilt 会误阻断，届时按其实现复核。门控读
-  // manifest.version（版本代理特性，非特性探测）：中间提交（version 未 bump
-  // 但 lease 已切）可能误判，文档限定 detached-HEAD tag 工作流。
+  // 依赖完整性（仅 0.1.3 整行需要 fs-ext：0.1.3-alpha.1/alpha.2（含正式版）
+  // 的会话锁直连 fs-ext；0.1.5-alpha.1 起改用 prebuilt node-addon-system。
+  // 刻意精确匹配、不做区间假设：未知版本线（如假想的 0.1.4）的原生依赖
+  // 不可预知，fail-open 放行（manifest/tsx/dist 三项仍照常校验）；
+  // 支持下限已是 0.1.5-rc.1，此门控只服务低于下限的旧目录，不阻断新版。
+  // 门控读 manifest.version（版本代理特性，非特性探测）：中间提交
+  // （version 未 bump 但 lease 已切）可能误判，文档限定 detached-HEAD tag 工作流。
   // fs-ext 仅被 workspace 子包引用、不落根 node_modules，以 pnpm store 为准。
   // 前缀末尾 `@` 关键：`fs-extra@` 不得误命中（第 7 字符 `r` vs `@`）。
   if (
     version !== ''
     && SEMVER_RE.test(version)
-    && compareVersions(version, '0.1.3-alpha.1') >= 0
-    && compareVersions(version, '0.1.5-alpha.1') < 0
+    && isFsExtLine(version)
     && !pnpmStoreHas(dir, 'fs-ext@')
   ) {
     missing.push('依赖是旧版本安装的（缺 dsh 0.1.3.x 新增的 fs-ext），请重新执行 pnpm install（设置页「准备环境」或「下载更新」会自动完成）')

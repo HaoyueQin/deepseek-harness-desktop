@@ -155,6 +155,15 @@ assert.equal(isProtectedModule('@deepseek-ai/dsh-settings-file'), true)
 assert.equal(isProtectedModule('@deepseek-ai/dsh-session'), true)
 assert.equal(isProtectedModule('dshmarket'), false)
 assert.equal(isProtectedModule('@deepseek-ai/cordis-plugin-timer'), true)
+// --- 随船 bundle 包（上游 PROFILE_TEMPLATES 全量，禁用即破坏启动）---
+assert.equal(isProtectedModule('@deepseek-ai/dsh-base'), true)
+assert.equal(isProtectedModule('@deepseek-ai/dsh-web-app'), true)
+assert.equal(isProtectedModule('@deepseek-ai/dsh-headless'), true)
+assert.equal(isProtectedModule('@deepseek-ai/dsh-acp-app'), true)
+assert.equal(isProtectedModule('@deepseek-ai/dsh-sdk-app'), true)
+assert.equal(isProtectedModule('@deepseek-ai/dsh-sdk-minimal'), true)
+// $ 锚定：同前缀的第三方包不受牵连
+assert.equal(isProtectedModule('@deepseek-ai/dsh-base-extra'), false)
 
 rmSync(tmp, { recursive: true, force: true })
 console.log('recovery-patch OK')

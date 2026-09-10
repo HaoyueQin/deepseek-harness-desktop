@@ -129,13 +129,20 @@ export function readUserPatchState(patchPath: string): { disables: string[]; for
 /** 行 id 白名单：只允许普通无引号 YAML 标量。 */
 const ROW_ID_RE = /^[A-Za-z0-9_.-]+$/
 
-/** 宿主基础设施模块（禁禁用）：照搬 dshmarket PROTECTED_MODULE_PATTERNS。 */
+/** 宿主基础设施模块（禁禁用）：dshmarket PROTECTED_MODULE_PATTERNS 为底，
+ * 另加随船 bundle 包（dsh-base/acp-app/headless/sdk-app/sdk-minimal：
+ * 上游 PROFILE_TEMPLATES 的 5 个模板包，web-app 已在上；各包自带 patch
+ * 行，禁用即破坏启动——以 0.1.5-rc.1 全量包扫描为准，除随船 bundle 外
+ * 有 patch 行的包均已覆盖；上游新增 bundle 包时同步补）。 */
 const PROTECTED_MODULE_PATTERNS = [
   /^cordis:/, /^@deepseek-ai\/cordis-plugin-/, /^@deepseek-ai\/dsh-host-/,
   /^@deepseek-ai\/dsh-client-modules$/, /^@deepseek-ai\/dsh-client-connection$/,
   /^@deepseek-ai\/dsh-client-hmr$/, /^@deepseek-ai\/dsh-client-runtime$/,
   /^@deepseek-ai\/dsh-client-locale$/, /^@deepseek-ai\/dsh-client-web$/,
   /^@deepseek-ai\/dsh-web-frontend$/, /^@deepseek-ai\/dsh-web-app$/,
+  /^@deepseek-ai\/dsh-base$/, /^@deepseek-ai\/dsh-headless$/,
+  /^@deepseek-ai\/dsh-acp-app$/, /^@deepseek-ai\/dsh-sdk-app$/,
+  /^@deepseek-ai\/dsh-sdk-minimal$/,
   /^@deepseek-ai\/dsh-settings/, /^@deepseek-ai\/dsh-credentials/,
   /^@deepseek-ai\/dsh-session$/, /^@deepseek-ai\/dsh-storage$/,
   /^@deepseek-ai\/dsh-typert$/, /^@deepseek-ai\/dsh-api-remotes$/,
