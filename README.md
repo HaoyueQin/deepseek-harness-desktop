@@ -72,12 +72,12 @@ The Recovery Center is the shell's answer — a native page that turns a broken 
 
 | dsh version | use |
 | --- | --- |
-| **≥ 0.1.2-rc.1** | this shell release |
-| anything older (0.1.0/0.1.1, 0.1.2 alphas and earlier) | an **older shell release** — download it from the [Releases](https://github.com/HaoyueQin/deepseek-harness-desktop/releases) page |
+| **≥ 0.1.5-rc.1** | this shell release |
+| anything older (0.1.0 through 0.1.5-alpha.2) | an **older shell release** — download it from the [Releases](https://github.com/HaoyueQin/deepseek-harness-desktop/releases) page |
 
-This shell no longer adapts to dsh versions before 0.1.2-rc.1. Check your backend with
-`dsh --version`; if it is too old, either update dsh (`npm i -g @deepseek-ai/dsh@next`
-— 0.1.2-rc.1 currently ships on the `next` npm channel — or press "Check for updates" in
+This shell no longer adapts to dsh versions before 0.1.5-rc.1. Check your backend with
+`dsh --version`; if it is too old, either update dsh (`npm i -g @deepseek-ai/dsh`
+— 0.1.5-rc.1 is the `latest` npm channel — or press "Check for updates" in
 Settings → Desktop from a supported shell) **or** download the matching older shell release.
 
 ## Install
@@ -85,7 +85,7 @@ Settings → Desktop from a supported shell) **or** download the matching older 
 ### Prerequisites
 
 - **npm channel (default)**: Node.js ≥ 22 and the `dsh` CLI (`npm i -g @deepseek-ai/dsh`) — if missing, the app shows a setup page with a copyable command or a one-click in-app install
-- **Source channel (optional)**: additionally requires `git` and `pnpm` on PATH; the shell clones the repo and runs `pnpm install` + `pnpm build` for you — dsh 0.1.3.x sources also need a C++ build toolchain (on Windows: Visual Studio Build Tools with the "Desktop development with C++" workload) to compile the `fs-ext` dependency; dsh 0.1.5-alpha.1 and later uses prebuilt `node-addon-system` and no longer needs it
+- **Source channel (optional)**: additionally requires `git` and `pnpm` on PATH; the shell clones the repo and runs `pnpm install` + `pnpm build` for you — supported dsh versions (≥ 0.1.5-rc.1) use the prebuilt `node-addon-system`, so **no C++ build toolchain is needed** (historical 0.1.3.x compiled `fs-ext` and is outside the supported range)
 
 ### Download
 
@@ -141,7 +141,7 @@ The CI workflow (`.github/workflows/release.yml`) builds all three platforms on 
 
 - **Data** (`DSH_HOME`): defaults to `~/.dsh` (honors the `$DSH_HOME` environment variable) — profiles, sessions, storage; shared by both backend sources
 - **Logs**: `<userData>/logs/main.log`
-- **dsh**: the shell runs the backend from your chosen source — npm global (located via PATH + `npm root -g`, upgradable from Settings → Desktop) or a local checkout (validated before launch: manifest, `node_modules/tsx`, built web dist, and — for dsh 0.1.3.x only — the `fs-ext` dependency)
+- **dsh**: the shell runs the backend from your chosen source — npm global (located via PATH + `npm root -g`, upgradable from Settings → Desktop) or a local checkout (validated before launch: manifest, `node_modules/tsx`, built web dist, plus an `fs-ext` hint for pre-floor 0.1.3.x directories)
 
 ## Project layout
 
@@ -152,7 +152,7 @@ src/
   dsh-locator.ts        locate the npm-global dsh CLI (PATH check + npm root -g) + semver compare
   dsh-versions.ts       backend version listing (npm versions × dist-tags → sorted, channel-tagged)
   dsh-update-target.ts  npm dist-tags → update target (semver whitelist, prerelease-aware)
-  dsh-source.ts         git-checkout source: validation (manifest/tsx/web dist, fs-ext gate for dsh 0.1.3.x only), tag parsing, entry args
+  dsh-source.ts         git-checkout source: validation (manifest/tsx/web dist, incl. the 0.1.3.x fs-ext gate), tag parsing, entry args
   dsh-source-updater.ts source-channel updates: fetch tags → clean tree → checkout → pnpm install/build → restart
   dsh-updater.ts        npm-channel backend: check latest / install any version (upgrade or rollback)
   dsh/spawn.ts          spawn dsh web --port <policy port> --patch; parse stdout URL line; output ring buffer; graceful stop
@@ -178,7 +178,7 @@ assets/
 
 ## Known limitations (v1.x)
 
-- Requires Node.js ≥ 22 and **dsh ≥ 0.1.2-rc.1**; the npm channel needs a globally-installed `dsh` CLI (the setup page offers one-click install), the source channel needs `git` + `pnpm` — the shell bundles no runtime either way, so the installer stays small. Older dsh versions need an older shell release (see the dsh version support table above)
+- Requires Node.js ≥ 22 and **dsh ≥ 0.1.5-rc.1**; the npm channel needs a globally-installed `dsh` CLI (the setup page offers one-click install), the source channel needs `git` + `pnpm` — the shell bundles no runtime either way, so the installer stays small. Older dsh versions need an older shell release (see the dsh version support table above)
 - macOS builds are unsigned — Gatekeeper requires right-click → Open on first run; macOS has no auto-update (needs a signing certificate)
 - Windows auto-update is guided (downloads then runs the installer) rather than silent, due to the unsigned build
 - The source channel checks out release tags in detached HEAD — switch your branch back manually if you develop in the same clone

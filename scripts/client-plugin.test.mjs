@@ -124,9 +124,9 @@ const reactStub = {
   useRef: (v) => ({ current: v }),
 }
 
-// 用例一：新版后端（有桥）——工厂执行不抛错，apply 注册 settings.section order 30
+// 用例一：支持版本后端（有桥）——工厂执行不抛错，apply 注册 settings.section order 30
 {
-  const env = installBrowserMock({ dshVersion: '0.1.2-rc.1' })
+  const env = installBrowserMock({ dshVersion: '0.1.5-rc.1' })
   const def = await loadPlugin()
   const plugin = def.factory((name) => (name === 'react' ? reactStub : undefined))
   assert.equal(typeof plugin.apply, 'function')
@@ -146,7 +146,7 @@ const reactStub = {
 
 // 用例三：裸 dsh（无桥）——apply 直接返回，不注册不注入
 {
-  installBrowserMock({ dshVersion: '0.1.2-rc.1', hasBridge: false })
+  installBrowserMock({ dshVersion: '0.1.5-rc.1', hasBridge: false })
   const def = await loadPlugin()
   const plugin = def.factory(() => ({}))
   let called = false

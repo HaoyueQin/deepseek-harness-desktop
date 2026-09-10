@@ -6,7 +6,7 @@
  * 端口：默认固定 3080（与 dsh web 默认一致，页面 origin 稳定，浏览器
  * localStorage 侧的设置跨重启保留），被占用时由调用方降级 --port 0。
  * 无论固定或随机，实际地址都从 stdout 行 "dsh web: http://127.0.0.1:<port>[…]"
- * 解析（支持的 dsh ≥0.1.2 均带 /?token=，需整串使用以完成 cookie 换取）——
+ * 解析（支持的 dsh ≥0.1.5-rc.1 均带 /?token=，需整串使用以完成 cookie 换取）——
  * 这是 dsh 官方给 supervisor 的通道（源码注释：
  * "The URL line is a readiness signal: supervisors RPC as soon as they observe it"）。
  */

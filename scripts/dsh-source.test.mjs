@@ -117,6 +117,18 @@ test('dsh 0.1.5-alpha.1 无 fs-ext：不阻断（改用 prebuilt node-addon-syst
   assert.equal(v.warnings.length, 1)
 })
 
+test('dsh 0.1.5-rc.1 无 fs-ext：不阻断（支持下限版本，与 alpha.1 同 0.1.5 行）', () => {
+  // README 声明的支持下限即 0.1.5-rc.1：会话锁走 prebuilt node-addon-system，
+  // 正常安装没有 fs-ext，门控上限（<0.1.5-alpha.1）已经短路
+  const dir = makeSourceDir((d) => {
+    writeFileSync(join(d, 'apps', 'cli', 'package.json'), JSON.stringify({ version: '0.1.5-rc.1' }))
+  })
+  const v = validateSourceDir(dir)
+  assert.equal(v.ok, true)
+  assert.deepEqual(v.missing, [])
+  assert.equal(v.warnings.length, 1)
+})
+
 test('dsh 0.1.3 正式版缺 fs-ext：同样阻断（0.1.3.x 行）', () => {
   const dir = makeSourceDir((d) => {
     writeFileSync(join(d, 'apps', 'cli', 'package.json'), JSON.stringify({ version: '0.1.3' }))

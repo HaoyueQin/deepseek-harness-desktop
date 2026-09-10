@@ -72,11 +72,11 @@ dsh 迭代快、偶有破坏性变更，而插件的适配往往滞后——一�
 
 | dsh 版本 | 使用 |
 | --- | --- |
-| **≥ 0.1.2-rc.1** | 本版本桌面壳 |
-| 更旧的任意版本（0.1.0/0.1.1、0.1.2 各 alpha 及更早） | 下载**旧版本桌面壳**——见 [Releases](https://github.com/HaoyueQin/deepseek-harness-desktop/releases) 页面 |
+| **≥ 0.1.5-rc.1** | 本版本桌面壳 |
+| 更旧的任意版本（0.1.0 ～ 0.1.5-alpha.2 及更早） | 下载**旧版本桌面壳**——见 [Releases](https://github.com/HaoyueQin/deepseek-harness-desktop/releases) 页面 |
 
-本桌面壳不再适配 0.1.2-rc.1 之前的 dsh 版本。用 `dsh --version` 自查后端版本；
-若过旧，可升级 dsh（`npm i -g @deepseek-ai/dsh@next`——当前 0.1.2-rc.1 发布在 npm `next` 渠道；
+本桌面壳不再适配 0.1.5-rc.1 之前的 dsh 版本。用 `dsh --version` 自查后端版本；
+若过旧，可升级 dsh（`npm i -g @deepseek-ai/dsh`——0.1.5-rc.1 已是 npm `latest` 渠道；
 或在支持的桌面壳上通过设置页「检查更新」升级），**或**下载匹配的旧版桌面壳。
 
 ## 安装
@@ -84,7 +84,7 @@ dsh 迭代快、偶有破坏性变更，而插件的适配往往滞后——一�
 ### 前置条件
 
 - **npm 渠道（默认）**：Node.js ≥ 22 与 dsh CLI（`npm i -g @deepseek-ai/dsh`）——若未安装，应用会显示引导页，提供可复制命令或壳内一键安装
-- **源码渠道（可选）**：额外要求 PATH 里有 `git` 与 `pnpm`；克隆仓库与 `pnpm install` + `pnpm build` 均由壳代劳——运行 dsh 0.1.3.x 源码还需 C++ 构建工具链（Windows：Visual Studio Build Tools，「使用 C++ 的桌面开发」工作负载），用于编译 `fs-ext` 依赖；dsh 0.1.5-alpha.1 起改用预构建 `node-addon-system`，不再需要
+- **源码渠道（可选）**：额外要求 PATH 里有 `git` 与 `pnpm`；克隆仓库与 `pnpm install` + `pnpm build` 均由壳代劳——支持的 dsh（≥ 0.1.5-rc.1）使用预构建 `node-addon-system`，**无需 C++ 构建工具链**（历史 0.1.3.x 需编译 `fs-ext`，该版本已不在支持范围）
 
 ### 下载
 
@@ -140,7 +140,7 @@ CI 工作流（`.github/workflows/release.yml`）在每个 `v*` tag 上构建全
 
 - **数据**（`DSH_HOME`）：默认 `~/.dsh`（尊重 `$DSH_HOME` 环境变量）— profile、会话、存储；两种后端来源共享
 - **日志**：`<userData>/logs/main.log`
-- **dsh**：壳从你所选的来源运行后端 — npm 全局（PATH + `npm root -g` 定位，可在设置 → 桌面一键升级）或本地检出（启动前校验 manifest、`node_modules/tsx`、已构建的前端 dist，仅 dsh 0.1.3.x 还会校验 `fs-ext` 依赖）
+- **dsh**：壳从你所选的来源运行后端 — npm 全局（PATH + `npm root -g` 定位，可在设置 → 桌面一键升级）或本地检出（启动前校验 manifest、`node_modules/tsx`、已构建的前端 dist；低于支持下限的 0.1.3.x 目录另有 `fs-ext` 提示）
 
 ## 项目结构
 
@@ -151,7 +151,7 @@ src/
   dsh-locator.ts        定位 npm 全局的 dsh CLI（PATH 验证 + npm root -g）+ semver 比较
   dsh-versions.ts       后端版本清单（npm versions × dist-tags → 排序、渠道标注）
   dsh-update-target.ts  npm dist-tags → 更新目标（semver 白名单，预发布感知）
-  dsh-source.ts         git 源码来源：目录校验（manifest/tsx/web dist，仅 dsh 0.1.3.x 的 fs-ext 门控）、tag 解析、启动参数
+  dsh-source.ts         git 源码来源：目录校验（manifest/tsx/web dist，含 0.1.3.x 的 fs-ext 门控）、tag 解析、启动参数
   dsh-source-updater.ts 源码渠道更新：拉取 tag → 干净工作区 → 检出 → pnpm install/build → 重启
   dsh-updater.ts        npm 渠道后端：检查最新版 / 安装任意版本（升级或回退）
   dsh/spawn.ts          spawn dsh web --port <策略端口> --patch，解析 stdout URL 行，输出环形缓冲，优雅停止
@@ -177,7 +177,7 @@ assets/
 
 ## 已知限制（v1.x）
 
-- 需要 Node.js ≥ 22 与 **dsh ≥ 0.1.2-rc.1**；npm 渠道需全局安装 dsh CLI（引导页提供一键安装），源码渠道需 `git` + `pnpm`——两种方式壳都不内置运行时，安装包保持小巧。更旧的 dsh 版本需要旧版桌面壳（见上方 dsh 版本支持表）
+- 需要 Node.js ≥ 22 与 **dsh ≥ 0.1.5-rc.1**；npm 渠道需全局安装 dsh CLI（引导页提供一键安装），源码渠道需 `git` + `pnpm`——两种方式壳都不内置运行时，安装包保持小巧。更旧的 dsh 版本需要旧版桌面壳（见上方 dsh 版本支持表）
 - macOS 构建未签名 — Gatekeeper 首次运行需右键 → 打开；macOS 暂不支持自动更新（需签名证书）
 - Windows 自动更新为引导模式（下载后运行安装包）而非静默安装，源于未签名构建
 - 源码渠道以 detached HEAD 检出发布 tag——如果你在同一克隆里做开发，更新后需手动切回工作分支

@@ -5,7 +5,10 @@
  * 然后停止进程。这是端口发现链路的可复现验证。
  *
  * 纯壳架构（v1.0.0 起）：用系统已装的 dsh（与桌面壳运行时同源）。
- * 前置：npm i -g @deepseek-ai/dsh。
+ * 前置：npm i -g @deepseek-ai/dsh + npm run build（版本比较复用 dist 产物）。
+ *
+ * 另断言已装 dsh 不低于支持下限（README / Release 声明的 dsh ≥ 0.1.5-rc.1）：
+ * CI 与本地都必须真跑在支持范围内，否则渠道漂移会给出假绿。
  */
 
 import { spawn, spawnSync } from 'node:child_process'
@@ -26,11 +29,25 @@ function locateDsh() {
   if (rootDir.status !== 0 || !rootDir.stdout?.trim()) throw new Error('未检测到 npm')
   const binJs = join(rootDir.stdout.trim(), '@deepseek-ai', 'dsh', 'lib', 'bin.js')
   if (!existsSync(binJs)) throw new Error(`未找到 ${binJs}`)
-  return binJs
+  return { binJs, version: ver.stdout.trim() }
 }
 
 const nodePath = 'node'
-const dshBin = locateDsh()
+const { binJs: dshBin, version: dshVersion } = locateDsh()
+
+// 支持下限（README「dsh 版本支持」与 Release 正文声明）。版本比较复用壳的纯
+// 函数（dist/dsh-locator.js），避免在冒烟脚本里复制一套 semver 语义。
+const SUPPORT_FLOOR = '0.1.5-rc.1'
+let compareVersions
+try {
+  ({ compareVersions } = await import('../dist/dsh-locator.js'))
+} catch {
+  throw new Error('缺少 dist/dsh-locator.js —— 先运行 npm run build 再跑冒烟')
+}
+if (compareVersions(dshVersion, SUPPORT_FLOOR) < 0) {
+  throw new Error(`dsh ${dshVersion} 低于支持下限 ${SUPPORT_FLOOR}：本壳不再适配该版本（npm i -g @deepseek-ai/dsh 升级）`)
+}
+console.log(`SMOKE OK: dsh ${dshVersion} ≥ 支持下限 ${SUPPORT_FLOOR}`)
 
 const dshHome = mkdtempSync(join(tmpdir(), 'dsh-smoke-'))
 // URL 行独占一行以 \n 收尾；锚定换行避免行中途提前命中；地址段 \S* 兼容 /?token=，

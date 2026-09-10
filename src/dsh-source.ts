@@ -3,13 +3,15 @@
  *
  * 源码启动是通用能力，不绑定任何特定版本：spawn 形态
  * `node --import tsx/esm apps/cli/src/bin.ts web …`（cwd=仓库根）已验证
- * 对 dsh-v0.1.0-rc.8 ～ dsh-v0.1.5-alpha.1 一致（根 package.json 的
+ * 对 dsh-v0.1.0-rc.8 ～ dsh-v0.1.5-rc.1 一致（根 package.json 的
  * "dsh" script、tsx devDep、入口路径各 tag 相同，核实：
- * `git diff dsh-v0.1.3-alpha.2..dsh-v0.1.5-alpha.1 -- package.json apps/cli/src/bin.ts`；
+ * `git diff dsh-v0.1.3-alpha.2..dsh-v0.1.5-rc.1 -- package.json apps/cli/src/bin.ts`；
  * 0.1.5 的 web-app 内 SSH 判断与 client 可选 webServer 承载重构不影响
- * spawn 形态；0.1.3.x 新增的 fs-ext 硬依赖由下方版本门控单独校验，
- * 0.1.5-alpha.1 起改用 prebuilt node-addon-system，不再需要它）；
- * 本项目支持版本为 dsh ≥0.1.2-rc.1，详见 README 支持版本说明。
+ * spawn 形态；0.1.5-alpha.1 → rc.1 的 279 个提交不触及启动面，核实：
+ * `git diff --stat dsh-v0.1.5-alpha.1..dsh-v0.1.5-rc.1 -- apps/cli/src apps/web packages/boot`
+ * （零差异，仅版本号 bump 与 UI/API 内部改动）；0.1.3.x 新增的 fs-ext 硬依赖
+ * 由下方版本门控单独校验，0.1.5-alpha.1 起改用 prebuilt node-addon-system）；
+ * 本项目支持版本为 dsh ≥0.1.5-rc.1，详见 README 支持版本说明。
  *
  * 启动硬前提（阻断项，缺一不可）：
  * 1. apps/cli/package.json 可读且 version 为合法 semver（取版本号；非法串
@@ -17,10 +19,11 @@
  * 2. node_modules/tsx 存在（--import tsx/esm 从 cwd 解析，需先 pnpm install）
  * 3. apps/web/dist/index.html 存在（旧版缺 dist 启动即 throw、alpha.1+ 缺 dist
  *    白屏——统一前置拦截，要求先跑过一次 `pnpm build`）
- * 4. dsh 0.1.3.x 时 pnpm store 里有该版本新增硬依赖 fs-ext（需 C++ 编译工具链，
- *    无 prebuilt）——tsx 在而 fs-ext 不在说明依赖是旧版安装的（如手动
- *    git pull 后未重新 install），启动必然崩 ERR_MODULE_NOT_FOUND；
- *    0.1.5-alpha.1 起会话锁改用 prebuilt node-addon-system，此条不适用
+ * 4. 低于支持下限的历史目录（0.1.3.x）另需 pnpm store 里有该版本新增硬依赖
+ *    fs-ext（需 C++ 编译工具链，无 prebuilt）——tsx 在而 fs-ext 不在说明依赖
+ *    是旧版安装的（如手动 git pull 后未重新 install），启动必然崩
+ *    ERR_MODULE_NOT_FOUND；支持的 0.1.5-rc.1 起会话锁用 prebuilt
+ *    node-addon-system，此条只作历史目录提示，不改变支持下限
  */
 
 import { spawnSync } from 'node:child_process'
@@ -146,8 +149,9 @@ export function validateSourceDir(
   else if (!SEMVER_RE.test(version)) missing.push('版本号非法（apps/cli/package.json 的 version 不是合法 semver，文件可能被手改或损坏，请检查后重新执行 pnpm install）')
   if (!existsSync(join(dir, 'node_modules', 'tsx'))) missing.push('依赖未安装（缺 node_modules/tsx，请在源码目录执行 pnpm install）')
   if (!existsSync(join(dir, 'apps', 'web', 'dist', 'index.html'))) missing.push('前端未构建（缺 apps/web/dist，请在源码目录执行 pnpm build）')
-  // 依赖完整性（仅 dsh 0.1.3.x 需要 fs-ext：0.1.3-alpha.1/alpha.2 的会话锁直连
-  // fs-ext；0.1.5-alpha.1 起改用 prebuilt node-addon-system，上限避免误报新版目录）。
+  // 依赖完整性（仅历史 0.1.3.x 需要 fs-ext：0.1.3-alpha.1/alpha.2 的会话锁直连
+  // fs-ext；0.1.5-alpha.1 起改用 prebuilt node-addon-system，上限避免误报新版目录。
+  // 支持下限已是 0.1.5-rc.1，此门控只服务低于下限的旧目录，fail-closed 提示不阻断新版）。
   // 区间假设：已知 tag 中 0.1.3.x 与 0.1.5-alpha.1 之间无其他 release line
   // （尚无 0.1.4）；未来中间版本落入区间会被要求 fs-ext，属 fail-closed——
   // 若其 lease 已切 prebuilt 会误阻断，届时按其实现复核。门控读

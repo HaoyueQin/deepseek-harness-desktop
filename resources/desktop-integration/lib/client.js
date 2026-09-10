@@ -3,7 +3,7 @@
  * __ModuleLoader__.load banner + external 只依赖 platform words）。
  * 桌面设置「桌面」分区：后端来源 / dsh 版本 / 开机自启 / 启动最小化 / 端口 /
  * 关于 / 更新检查；回退提示条。会话区域宽度完全交由上游原生拖拽手柄
- * （支持的 dsh ≥ 0.1.2 自带，壳不注入任何实现）。
+ * （支持的 dsh ≥ 0.1.5-rc.1 自带，壳不注入任何实现）。
  * 桥 window.dshDesktop 由壳 preload contextBridge 注入；裸 dsh（无桥）降级为空。
  * UI 用原生元素 + --dsw-* CSS 变量（品牌蓝 #4176E6 兜底），契合 dsh 设计体系。
  * 一份 bundle 同时服务 npm 全局与 git 源码两种后端来源（支持版本见 README）。

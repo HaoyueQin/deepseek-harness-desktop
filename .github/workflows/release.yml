@@ -55,9 +55,10 @@ jobs:
           ELECTRON_BUILDER_BINARIES_MIRROR: https://npmmirror.com/mirrors/electron-builder-binaries/
 
       # 纯壳架构：dsh 运行时不内置；smoke 用 runner 上全局安装的 dsh。
-      # 支持版本为 dsh ≥0.1.2-rc.1（npm next 渠道）；不再用 latest（=0.1.1-rc.2，旧版）冒烟。
+      # 渠道用 latest：与引导页给用户的安装命令、设置页「检查更新」的默认目标一致
+      # （next 是预发布渠道，历史上长期落后于 latest）。支持下限由 smoke.mjs 断言。
       - name: Install dsh CLI (for smoke)
-        run: npm i -g @deepseek-ai/dsh@next
+        run: npm i -g @deepseek-ai/dsh@latest
 
       - name: Install icon
         run: npm run build:runtime
@@ -111,7 +112,7 @@ jobs:
           body_template: |
             ## dsh 版本支持
 
-            本版本桌面壳支持 **dsh ≥ 0.1.2-rc.1**。使用更旧 dsh 版本（0.1.0/0.1.1、各 alpha）的用户请前往 [Releases](https://github.com/HaoyueQin/deepseek-harness-desktop/releases) 页面下载**旧版本桌面壳**。
+            本版本桌面壳支持 **dsh ≥ 0.1.5-rc.1**。使用更旧 dsh 版本（0.1.0 ～ 0.1.5-alpha.2 及更早）的用户请前往 [Releases](https://github.com/HaoyueQin/deepseek-harness-desktop/releases) 页面下载**旧版本桌面壳**。
 
             ---
 
