@@ -3,13 +3,17 @@
  *
  * 源码启动是通用能力，不绑定任何特定版本：spawn 形态
  * `node --import tsx/esm apps/cli/src/bin.ts web …`（cwd=仓库根）已验证
- * 对 dsh-v0.1.0-rc.8 ～ dsh-v0.1.5-rc.1 一致（根 package.json 的
+ * 对 dsh-v0.1.0-rc.8 ～ dsh-v0.1.6-alpha.1 一致（根 package.json 的
  * "dsh" script、tsx devDep、入口路径各 tag 相同，核实：
  * `git diff dsh-v0.1.3-alpha.2..dsh-v0.1.5-rc.1 -- package.json apps/cli/src/bin.ts`；
  * 0.1.5 的 web-app 内 SSH 判断与 client 可选 webServer 承载重构不影响
  * spawn 形态；0.1.5-alpha.1 → rc.1 的 279 个提交不触及启动面，核实：
  * `git diff --stat dsh-v0.1.5-alpha.1..dsh-v0.1.5-rc.1 -- apps/cli/src apps/web packages/boot`
- * （零差异，仅版本号 bump 与 UI/API 内部改动）；0.1.3.x 新增的 fs-ext 硬依赖
+ * （零差异，仅版本号 bump 与 UI/API 内部改动）；0.1.5 → 0.1.6-alpha.1 的 800 个
+ * 提交中 bin.ts 零 diff、tsx devDep 未变、apps/ 目录结构不变（apps/web 前端产物
+ * 路径保留），核实：
+ * `git diff dsh-v0.1.5-rc.2..dsh-v0.1.6-alpha.1 -- package.json apps/cli/package.json apps/cli/src/bin.ts`；
+ * 0.1.3.x 新增的 fs-ext 硬依赖
  * 由下方版本门控单独校验，0.1.5-alpha.1 起改用 prebuilt node-addon-system）；
  * 本项目支持版本为 dsh ≥0.1.5-rc.1，详见 README 支持版本说明。
  *
