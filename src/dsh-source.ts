@@ -14,7 +14,7 @@
  * 路径保留），核实：
  * `git diff dsh-v0.1.5-rc.2..dsh-v0.1.6-alpha.1 -- package.json apps/cli/package.json apps/cli/src/bin.ts`；
  * 0.1.3.x 新增的 fs-ext 硬依赖
- * 由下方版本门控单独校验，0.1.5-alpha.1 起改用 prebuilt node-addon-system）；
+ * 由下方版本门控单独校验，0.1.5-alpha.1 起改用 prebuilt node-addon-require-builtin）；
  * 本项目支持版本为 dsh ≥0.1.5-rc.1，详见 README 支持版本说明。
  *
  * 启动硬前提（阻断项，缺一不可）：
@@ -27,7 +27,7 @@
  *    fs-ext（需 C++ 编译工具链，无 prebuilt）——tsx 在而 fs-ext 不在说明依赖
  *    是旧版安装的（如手动 git pull 后未重新 install），启动必然崩
  *    ERR_MODULE_NOT_FOUND；支持的 0.1.5-rc.1 起会话锁用 prebuilt
- *    node-addon-system，此条只作历史目录提示，不改变支持下限
+ *    node-addon-require-builtin，此条只作历史目录提示，不改变支持下限
  */
 
 import { spawnSync } from 'node:child_process'
@@ -166,7 +166,7 @@ export function validateSourceDir(
   if (!existsSync(join(dir, 'node_modules', 'tsx'))) missing.push('依赖未安装（缺 node_modules/tsx，请在源码目录执行 pnpm install）')
   if (!existsSync(join(dir, 'apps', 'web', 'dist', 'index.html'))) missing.push('前端未构建（缺 apps/web/dist，请在源码目录执行 pnpm build）')
   // 依赖完整性（仅 0.1.3 整行需要 fs-ext：0.1.3-alpha.1/alpha.2（含正式版）
-  // 的会话锁直连 fs-ext；0.1.5-alpha.1 起改用 prebuilt node-addon-system。
+  // 的会话锁直连 fs-ext；0.1.5-alpha.1 起改用 prebuilt node-addon-require-builtin。
   // 刻意精确匹配、不做区间假设：未知版本线（如假想的 0.1.4）的原生依赖
   // 不可预知，fail-open 放行（manifest/tsx/dist 三项仍照常校验）；
   // 支持下限已是 0.1.5-rc.1，此门控只服务低于下限的旧目录，不阻断新版。
