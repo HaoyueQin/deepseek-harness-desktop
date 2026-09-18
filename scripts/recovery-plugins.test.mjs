@@ -127,6 +127,28 @@ assert.equal(readPatchReload(join(tmp, 'profiles', 'missing')), 'live')
   assert.equal(readPatchReload(mk('corrupt-prof', '{ not json')), 'live')
 }
 
+// --- 0.1.6-alpha.2 起上游移除 manifest 的 patchReload 字段 ---
+// HMR 改由 base bundle 的 `hmr` 行提供（launcher 提供 profileContext 即启用），
+// 与 profile manifest 无关，故该版本起不论字段残留什么都恒为 live。
+// 回归：留旧语义会把"实际已热生效"误导成"需重启"。
+{
+  const mk2 = (name, manifest) => {
+    const dir = join(tmp, 'profiles', name)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'package.json'), manifest, 'utf8')
+    return dir
+  }
+  const residual = JSON.stringify({ dsh: { profile: { bundles: [], patchReload: 'startup' } } })
+  for (const ver of ['0.1.6-alpha.2', '0.1.6-alpha.3', '0.1.6', '0.1.7-rc.1']) {
+    assert.equal(readPatchReload(mk2('residual-' + ver, residual), ver), 'live', `dsh ${ver} 应为 live`)
+  }
+  // 边界：alpha.2 之前仍按 manifest 字段判定
+  assert.equal(readPatchReload(mk2('residual-alpha1', residual), '0.1.6-alpha.1'), 'startup')
+  assert.equal(readPatchReload(mk2('residual-rc2', residual), '0.1.5-rc.2'), 'startup')
+  // 未提供版本（旧调用方）：维持既有语义，不误判
+  assert.equal(readPatchReload(mk2('residual-nover', residual)), 'startup')
+}
+
 // --- pluginCliArgs 写死 web：永不构造 desktop（改 'web' 为 'desktop' 即红）---
 assert.deepEqual(pluginCliArgs('remove', 'x'), ['plugin', '--profile', 'web', 'remove', 'x'])
 assert.deepEqual(pluginCliArgs('update', '@scope/name'), ['plugin', '--profile', 'web', 'update', '@scope/name'])

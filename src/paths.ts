@@ -44,11 +44,6 @@ export function desktopPatchPath(): string {
   return join(resourcesDir(), 'desktop-patch.yml')
 }
 
-/** 桌面集成插件包目录（dev 项目根 resources/，prod extraResources）。 */
-export function desktopPluginDir(): string {
-  return join(resourcesDir(), 'desktop-integration')
-}
-
 /** 恢复页（壳原生 HTML：崩溃诊断/启动失败/维护中心）。 */
 export function recoveryPagePath(): string {
   return join(resourcesDir(), 'recovery.html')

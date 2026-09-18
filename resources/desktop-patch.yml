@@ -1,6 +1,13 @@
 # 壳注入：设置页「桌面」分区插件（浏览器 half，dsh-desktop-integration）
-# 包由壳在 spawn 前同步到 $DSH_HOME/profiles/node_modules/（扁平回退目录），
-# name 按 profile 目录 node-resolve。
+#
+# name 用「相对本文件的路径」而不是裸包名。dsh 解析 --patch 时会把这类名称锚定为
+# file: URL（app-boot 的 anchorInsertedPluginNames，0.1.2-rc.1 起所有版本都有），
+# 于是：
+#   - 宿主 half 直接从壳的 resources 目录 import，无需把插件拷进 $DSH_HOME；
+#   - 浏览器 half 由 client-modules 的 path-like 分支（0.1.3-alpha.2 起）向上找到
+#     本目录的 package.json，拿到 dsh.client 声明与 ./client 导出；
+#   - 与 profile 模块解析模式无关（≤0.1.6-alpha.1 的 link / ≥alpha.2 的 runtime），
+#     也不受 pnpm install 剪除 $DSH_HOME/profiles/*/node_modules 的影响。
 - insert:
     - id: dsh-desktop-integration
-      name: 'dsh-desktop-integration'
+      name: './desktop-integration/lib/index.js'

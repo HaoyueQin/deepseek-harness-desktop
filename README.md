@@ -72,13 +72,20 @@ The Recovery Center is the shell's answer — a native page that turns a broken 
 
 | dsh version | use |
 | --- | --- |
-| **≥ 0.1.5-rc.1** (verified through 0.1.6-alpha.1) | this shell release |
+| **≥ 0.1.5-rc.1** (verified through 0.1.6-alpha.2) | this shell release |
 | anything older (0.1.0 through 0.1.5-alpha.2) | an **older shell release** — download it from the [Releases](https://github.com/HaoyueQin/deepseek-harness-desktop/releases) page |
 
 This shell no longer adapts to dsh versions before 0.1.5-rc.1. Check your backend with
 `dsh --version`; if it is too old, either update dsh (`npm i -g @deepseek-ai/dsh`
 — 0.1.5-rc.1 is the `latest` npm channel — or press "Check for updates" in
 Settings → Desktop from a supported shell) **or** download the matching older shell release.
+
+Note on 0.1.6-alpha.2: dsh changed the default profile module-resolution mode from `link`
+to `runtime`, so a bare plugin name must resolve from the profile's own `node_modules`
+closure. This shell sidesteps that entirely — its `--patch` row uses a `name` that is a
+path relative to the patch file, which dsh anchors to a `file:` URL. That mechanism
+behaves the same on every dsh version from 0.1.5-rc.1 on, independent of the resolution
+mode.
 
 ## Relationship with the official Desktop app
 

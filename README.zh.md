@@ -72,12 +72,17 @@ dsh 迭代快、偶有破坏性变更，而插件的适配往往滞后——一�
 
 | dsh 版本 | 使用 |
 | --- | --- |
-| **≥ 0.1.5-rc.1**（已验证至 0.1.6-alpha.1） | 本版本桌面壳 |
+| **≥ 0.1.5-rc.1**（已验证至 0.1.6-alpha.2） | 本版本桌面壳 |
 | 更旧的任意版本（0.1.0 ～ 0.1.5-alpha.2 及更早） | 下载**旧版本桌面壳**——见 [Releases](https://github.com/HaoyueQin/deepseek-harness-desktop/releases) 页面 |
 
 本桌面壳不再适配 0.1.5-rc.1 之前的 dsh 版本。用 `dsh --version` 自查后端版本；
 若过旧，可升级 dsh（`npm i -g @deepseek-ai/dsh`——0.1.5-rc.1 已是 npm `latest` 渠道；
 或在支持的桌面壳上通过设置页「检查更新」升级），**或**下载匹配的旧版桌面壳。
+
+关于 0.1.6-alpha.2：dsh 把 profile 模块解析默认模式由 `link` 改为 `runtime`，裸包名
+必须落在 profile 自身的 `node_modules` 闭包内才能解析。本壳绕开了这一点——`--patch`
+里的 `name` 用相对补丁文件的路径，dsh 会把它锚定为 `file:` URL；该机制从 0.1.5-rc.1
+起的所有版本都一致，与解析模式无关。
 
 ## 与官方桌面应用的关系
 

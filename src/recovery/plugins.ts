@@ -6,6 +6,7 @@
 
 import { readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
+import { compareVersions } from '../dsh-locator.js'
 import {
   bundlePatchInsertedIds, disableRow, enableRow, isProtectedModule, readUserPatchState,
 } from './patch.js'
@@ -93,16 +94,29 @@ export function listPlugins(profileDir: string): PluginInfo[] {
   })
 }
 
-/** 用户补丁层的重载策略（profile manifest 的 `dsh.profile.patchReload`）。 */
+/**
+ * profile 的补丁重载策略（profile manifest 的 `dsh.profile.patchReload`）。
+ */
 export type PatchReload = 'live' | 'startup'
+
+/** 上游把补丁热重载从 launcher 内联改为 base bundle 的 `hmr` 行，起于此版本。 */
+const HMR_OWNED_BY_BUNDLE_SINCE = '0.1.6-alpha.2'
 
 /**
  * profile 的补丁重载策略：'live' = dsh 监视补丁文件，写入后热重组生效（无需
- * 重启）；'startup' = 只在启动时应用。缺省按上游语义取 'live'
- * （dsh 的 DEFAULT_PROFILE_PATCH_RELOAD，既有 profile 省略该字段时同样按 live）；
- * 非法值按 'startup' 保守处理——上游对非法值 fail-loud 拒绝启动，此时壳不承诺热生效。
+ * 重启）；'startup' = 只在启动时应用。
+ *
+ * 0.1.6-alpha.2 起上游删除了 manifest 的 `dsh.profile.patchReload`（HMR 搬进 base
+ * bundle 的 `hmr` 行，launcher 提供 profileContext 即启用），残留字段不再被读取；
+ * 此时必须按 live 处理才与后端一致——否则壳会把"已热生效"误报成"需重启"。
+ * 更早版本按字段判定：缺省 live（上游 DEFAULT_PROFILE_PATCH_RELOAD，既有 profile
+ * 省略该字段时同样 live）；非法值按 startup 保守处理（上游对非法值 fail-loud
+ * 拒绝启动，此时壳不承诺热生效）。
+ * @param profileDir - profile 目录（读其 package.json）。
+ * @param dshVersion - 生效后端版本；缺省时按旧语义只读 manifest 字段。
  */
-export function readPatchReload(profileDir: string): PatchReload {
+export function readPatchReload(profileDir: string, dshVersion?: string): PatchReload {
+  if (dshVersion !== undefined && compareVersions(dshVersion, HMR_OWNED_BY_BUNDLE_SINCE) >= 0) return 'live'
   const manifest = readJson<{ dsh?: { profile?: { patchReload?: unknown } } }>(join(profileDir, 'package.json'))
   const raw = manifest?.dsh?.profile?.patchReload
   if (raw === undefined) return 'live'

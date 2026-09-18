@@ -42,10 +42,9 @@ import { ipcSenderKind } from './recovery/ipc-guard.js'
 // UpdateInfo.path 只是 latest.yml 里的相对文件名，spawn 会 ENOENT。
 import type { UpdateDownloadedEvent } from 'electron-updater'
 import { join } from 'node:path'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { killTree } from './kill-tree.js'
-import { desktopPluginDir } from './paths.js'
 import { log } from './log.js'
 import { INJECT_TITLEBAR } from './titlebar.js'
 
@@ -301,7 +300,7 @@ function registerAppIpc(): void {
     if (typeof name !== 'string' || !isValidPluginName(name)) return { ok: false, applied: [], disabledCount: 0, reason: 'invalid', live: false }
     const dir = join(dshHomeDir(), 'profiles', 'web')
     const r = await fn(dir, name)
-    return { ...r, live: r.ok && dshAlive && readPatchReload(dir) === 'live' }
+    return { ...r, live: r.ok && dshAlive && readPatchReload(dir, readDshVersion()) === 'live' }
   }
   ipcMain.handle('plugins:disable', (event, name: unknown) =>
     togglePlugin(fromRecoveryPage(event), name, disablePlugin))
@@ -699,7 +698,6 @@ async function startDshAndLoad(located: LocatedDsh): Promise<void> {
   if (dshPortDegraded) {
     log(`端口 ${policy} 被占用，本次降级随机端口（页面侧设置本次不保留）`)
   }
-  ensureDesktopPlugin(dshHomeDir())
 
   let attempt = spawnDshAttempt(located, port)
   let url: string
@@ -922,34 +920,6 @@ function registerSetupIpc(): void {
     if (setupInstalling || sourceBusy) return { ok: false, busy: true }
     return { ok: await bootWithLocatedDsh() === 'ok' }
   })
-}
-
-/**
- * 同步桌面集成插件到 dsh 的扁平回退目录（$DSH_HOME/profiles/node_modules/，
- * 由 healProfilesModuleFallback 维护），使 --patch 的 name 可被 profile 解析。
- * 幂等：每次 spawn 前同步，失败仅告警不阻断。
- */
-function ensureDesktopPlugin(dshHome: string): void {
-  const src = desktopPluginDir()
-  const target = join(dshHome, 'profiles', 'node_modules', 'dsh-desktop-integration')
-  try {
-    mkdirSync(join(target, 'lib'), { recursive: true })
-    // 原子写：先落临时名再 rename，避免 dsh 恰好在写入中途读到半截
-    // bundle（表现为页面端 React #130 渲染崩溃）。
-    const files: Array<[string, string]> = [
-      ['package.json', join('package.json')],
-      ['lib/index.js', join('lib', 'index.js')],
-      ['lib/client.js', join('lib', 'client.js')],
-    ]
-    for (const [rel, dest] of files) {
-      const tmp = join(target, rel + '.tmp')
-      copyFileSync(join(src, rel), tmp)
-      renameSync(tmp, join(target, dest))
-    }
-    log('desktop-plugin: 已同步到 ' + target)
-  } catch (err) {
-    log(`desktop-plugin: 同步失败 ${String(err)}`)
-  }
 }
 
 /**
