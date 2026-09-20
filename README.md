@@ -77,7 +77,7 @@ The Recovery Center is the shell's answer — a native page that turns a broken 
 
 This shell no longer adapts to dsh versions before 0.1.5-rc.1. Check your backend with
 `dsh --version`; if it is too old, either update dsh (`npm i -g @deepseek-ai/dsh`
-— 0.1.5-rc.1 is the `latest` npm channel — or press "Check for updates" in
+— the `latest` npm channel is already past the 0.1.5-rc.1 floor — or press "Check for updates" in
 Settings → Desktop from a supported shell) **or** download the matching older shell release.
 
 Note on 0.1.6-alpha.2: dsh changed the default profile module-resolution mode from `link`

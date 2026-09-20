@@ -16,6 +16,11 @@ build/icon.icns
 # 本地工具目录
 .zcode/
 .reasonix/
+.mnemon/
+
+# 本机专属调试脚本（CDP 验收辅助 / dev 重启清理），不入库
+scripts/cdp.mjs
+scripts/tmp-restart-clean.ps1
 pnpm-lock.yaml
 docs/*
 # README banner / demo 动图需随仓库发布
