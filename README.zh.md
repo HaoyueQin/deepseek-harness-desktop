@@ -9,6 +9,11 @@
 
 [English](README.md) | 简体中文
 
+> [!WARNING]
+> **维护模式。** 自 2026-09-29 起本项目不再开发：不新增功能，也不跟进上游 dsh 的发布节奏。官方 DeepSeek Harness 桌面端（<https://www.deepseek.com/download/>）是 Windows x64 与 Apple 芯片 macOS 上的推荐替代。最后一个桌面壳版本 v1.3.2 及此前所有构建长期保留在 [Releases](https://github.com/HaoyueQin/deepseek-harness-desktop/releases) 页面，[MIT 许可](LICENSE)允许你自行 fork 继续维护。
+>
+> **仍然受理：** 官方暂未覆盖的平台（Linux、Intel macOS）上，若上游变更导致本壳完全无法使用，请附 `dsh --version` 与日志提交 issue。仅做适配性修复：不承诺时间，不受理新功能请求。
+
 [![Release](https://img.shields.io/github/v/release/HaoyueQin/deepseek-harness-desktop?style=flat-square&logo=github)](https://github.com/HaoyueQin/deepseek-harness-desktop/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/HaoyueQin/deepseek-harness-desktop/release.yml?style=flat-square&label=build)](https://github.com/HaoyueQin/deepseek-harness-desktop/actions)
 [![Stars](https://img.shields.io/github/stars/HaoyueQin/deepseek-harness-desktop?style=flat-square)](https://github.com/HaoyueQin/deepseek-harness-desktop/stargazers)
@@ -86,7 +91,7 @@ dsh 迭代快、偶有破坏性变更，而插件的适配往往滞后——一�
 
 ## 与官方桌面应用的关系
 
-dsh 0.1.5 起上游自带官方 Electron 应用。本壳是另一条独立的轻量路线，包装你已有的 `dsh web` 界面——三处不同：
+dsh 0.1.5 起上游自带官方 Electron 应用。该应用现已是 Windows x64 与 Apple 芯片 macOS 的推荐替代（<https://www.deepseek.com/download/>）——本壳进入维护模式。官方暂未提供 Linux 与 Intel macOS 构建，这两类平台请继续使用 v1.3.2 或自行 fork。两条路线的差异：
 
 | | 本壳 | 官方桌面应用 |
 | --- | --- | --- |
@@ -94,7 +99,7 @@ dsh 0.1.5 起上游自带官方 Electron 应用。本壳是另一条独立的轻
 | 传输 | 监听 localhost（默认固定 `3080`，可配，被占时降级随机）——终端与桌面共用同一份后端 | 不开端口（`dsh-app://` + 私有管道） |
 | 版本 | 跟随 dsh 版本**范围**（≥ 0.1.5-rc.1）：npm `latest` 或任意源码 tag，设置页/恢复中心一键切换 | 每个版本锁定唯一的 Electron+dsh 组合 |
 
-共存：两者可同处一个 `DSH_HOME`（会话、设置、凭证是共享的产品数据），但不要同时驱动同一个 profile；本壳绝不会触碰 `profiles/desktop`（会直接拒绝）。
+共存：两者可同处一个 `DSH_HOME`（会话、设置、凭证是共享的产品数据），但不要同时驱动同一个 profile；本壳绝不会触碰 `profiles/desktop`（会直接拒绝）。启动官方应用前请先退出本壳。
 
 ## 安装
 
@@ -198,13 +203,14 @@ assets/
 - macOS 构建未签名 — Gatekeeper 首次运行需右键 → 打开；macOS 暂不支持自动更新（需签名证书）
 - Windows 自动更新为引导模式（下载后运行安装包）而非静默安装，源于未签名构建
 - 源码渠道以 detached HEAD 检出发布 tag——如果你在同一克隆里做开发，更新后需手动切回工作分支
+- **已知未修问题**：壳异常退出时，它拉起的 `dsh` 子进程可能残留为孤儿进程并继续占用固定端口，下次启动随之降级为随机端口。临时处置：结束残留的 `dsh web` 进程（Windows：`taskkill /F /PID <pid>`）后重启，端口恢复 `3080`。
 
 ## 反馈
 
-发现 Bug？有功能想法？**非常欢迎提交 issue** — 问题报告、使用疑问、功能建议都行。
+本项目已进入维护模式（见顶部声明）。issue 只受理一种情况：**上游变更导致本壳在 Linux 或 Intel macOS 上完全无法使用**。请附 `dsh --version`、平台与相关日志。新功能请求与一般使用疑问不在受理范围内，也不承诺处理时间。
 
 - [新建 issue](https://github.com/HaoyueQin/deepseek-harness-desktop/issues)（中文或 English 均可）
-- harness 本身的问题，可同步查阅上游 [deepseek-harness discussions](https://github.com/deepseek-ai/deepseek-harness/discussions)
+- harness 本身的问题请走上游 [deepseek-harness discussions](https://github.com/deepseek-ai/deepseek-harness/discussions)
 
 ## 活跃度
 

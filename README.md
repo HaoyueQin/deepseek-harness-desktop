@@ -9,6 +9,11 @@
 
 English | [简体中文](README.zh.md)
 
+> [!WARNING]
+> **Maintenance mode.** As of 2026-09-29 this project is no longer developed: no new features, and no tracking of upstream dsh releases. The official DeepSeek Harness desktop app (<https://www.deepseek.com/download/>) is the recommended replacement on Windows x64 and Apple-silicon macOS. The last shell release, v1.3.2, and every earlier build stay available on the [Releases](https://github.com/HaoyueQin/deepseek-harness-desktop/releases) page indefinitely, and the [MIT license](LICENSE) means you are free to fork it.
+>
+> **Still accepted:** on Linux or Intel macOS — platforms the official app does not ship yet — if an upstream change makes this shell unusable, open an issue with `dsh --version` and the log. Adaptation fixes only: no timeline, no feature requests.
+
 [![Release](https://img.shields.io/github/v/release/HaoyueQin/deepseek-harness-desktop?style=flat-square&logo=github)](https://github.com/HaoyueQin/deepseek-harness-desktop/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/HaoyueQin/deepseek-harness-desktop/release.yml?style=flat-square&label=build)](https://github.com/HaoyueQin/deepseek-harness-desktop/actions)
 [![Stars](https://img.shields.io/github/stars/HaoyueQin/deepseek-harness-desktop?style=flat-square)](https://github.com/HaoyueQin/deepseek-harness-desktop/stargazers)
@@ -89,7 +94,7 @@ mode.
 
 ## Relationship with the official Desktop app
 
-Since dsh 0.1.5, upstream ships its own official Electron app alongside the CLI. This project is an independent, lightweight alternative that wraps the `dsh web` UI you already have — the two differ in three places:
+Since dsh 0.1.5, upstream ships its own official Electron app alongside the CLI. That app is now the recommended replacement for Windows x64 and Apple-silicon macOS (<https://www.deepseek.com/download/>) — this shell is in maintenance mode. There is no official build for Linux or Intel macOS; on those platforms, stay on shell release v1.3.2 or fork it. The two take different routes:
 
 | | This shell | Official Desktop app |
 | --- | --- | --- |
@@ -97,7 +102,7 @@ Since dsh 0.1.5, upstream ships its own official Electron app alongside the CLI.
 | Transport | listens on localhost (fixed `3080` by default, configurable, random fallback) — terminal and desktop share one backend | opens no port (`dsh-app://` + private pipes) |
 | Versions | tracks a dsh version **range** (≥ 0.1.5-rc.1): npm `latest` or any source tag, switched from Settings / Recovery Center | pins one exact Electron+dsh combination per release |
 
-Coexistence: both can live under one `DSH_HOME` (sessions, settings and credentials are shared product data), but never drive the same profile at the same time — and this shell will always refuse to touch `profiles/desktop`.
+Coexistence: both can live under one `DSH_HOME` (sessions, settings and credentials are shared product data), but never drive the same profile at the same time — and this shell will always refuse to touch `profiles/desktop`. Quit this shell before starting the official app.
 
 ## Install
 
@@ -201,13 +206,14 @@ assets/
 - macOS builds are unsigned — Gatekeeper requires right-click → Open on first run; macOS has no auto-update (needs a signing certificate)
 - Windows auto-update is guided (downloads then runs the installer) rather than silent, due to the unsigned build
 - The source channel checks out release tags in detached HEAD — switch your branch back manually if you develop in the same clone
+- **Known unfixed issue**: if the shell exits abnormally, the `dsh` child it spawned can survive as an orphan and keep holding the fixed port, so the next launch falls back to a random port. Workaround: stop the leftover `dsh web` process (Windows: `taskkill /F /PID <pid>`), then relaunch — the port returns to `3080`.
 
 ## Feedback
 
-Found a bug? Have a feature idea? **Issues are very welcome** — bug reports, usage questions, and suggestions all help.
+The project is in maintenance mode (see the notice at the top). Issues are accepted for one case only: **an upstream change that makes this shell unusable on Linux or Intel macOS**. Include `dsh --version`, your platform and the relevant log. Feature requests and general usage questions are out of scope, and no timeline is promised.
 
 - [Open an issue](https://github.com/HaoyueQin/deepseek-harness-desktop/issues) (English or 中文, either is fine)
-- For harness-level problems, also check upstream [deepseek-harness discussions](https://github.com/deepseek-ai/deepseek-harness/discussions)
+- Harness-level problems belong upstream: [deepseek-harness discussions](https://github.com/deepseek-ai/deepseek-harness/discussions)
 
 ## Activity
 
